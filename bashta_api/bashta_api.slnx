@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="../Bashta.API/Bashta.API.csproj" />
+  <Project Path="../Bashta.Core/Bashta.Core.csproj" />
+  <Project Path="../Bashta.Infrastructure/Bashta.Infrastructure.csproj" />
+  <Project Path="../Bashta.ML/Bashta.ML.csproj" />
+</Solution>
