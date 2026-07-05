@@ -41,16 +41,19 @@ public class DiseaseController : ControllerBase
             return BadRequest("Slika je obavezna.");
 
         var plant = await _plantRepo.GetByIdAsync(request.PlantId);
+
         if (plant is null)
             return NotFound($"Biljka sa ID {request.PlantId} nije pronađena.");
 
         var extension = Path.GetExtension(request.Image.FileName).ToLowerInvariant();
 
         var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
+
         if (!allowedExtensions.Contains(extension))
             return BadRequest("Dozvoljeni formati slike su JPG, JPEG, PNG i WEBP.");
 
         var webRootPath = _environment.WebRootPath;
+
         if (string.IsNullOrWhiteSpace(webRootPath))
         {
             webRootPath = Path.Combine(_environment.ContentRootPath, "wwwroot");
@@ -146,7 +149,7 @@ public class DiseaseController : ControllerBase
         var detection = await _detectionRepo.GetLatestByPlantIdAsync(plantId);
 
         if (detection is null)
-            return NotFound();
+            return NotFound($"Nema detekcije bolesti za biljku sa ID {plantId}.");
 
         return Ok(new DiseaseDetectionResponse
         {
@@ -166,6 +169,7 @@ public class DiseaseController : ControllerBase
     public async Task<IActionResult> GetCatalog()
     {
         var diseases = await _diseaseRepo.GetAllAsync();
+
         return Ok(diseases);
     }
 }
