@@ -23,6 +23,7 @@ public class PlantPotResponse
 public class PlantSummary
 {
     public int Id { get; set; }
+    public int PlantTypeId { get; set; }
     public string? Nickname { get; set; }
     public string PlantTypeName { get; set; } = string.Empty;
     public DateOnly PlantedAt { get; set; }
