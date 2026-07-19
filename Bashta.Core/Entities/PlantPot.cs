@@ -10,8 +10,11 @@ public class PlantPot
     public string? FirmwareVersion { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsRainExposed { get; set; } = false;
 
-    // Navigation
+    public int SensorReadingIntervalMinutes { get; set; } = 60;
+
+
     public User User { get; set; } = null!;
     public ICollection<Plant> Plants { get; set; } = new List<Plant>();
     public ICollection<WateringEvent> WateringEvents { get; set; } = new List<WateringEvent>();

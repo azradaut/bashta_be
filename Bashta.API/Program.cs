@@ -26,7 +26,7 @@ builder.Services.AddScoped<IDiseaseRepository, DiseaseRepository>();
 
 // Services
 builder.Services.AddScoped<RecommendationService>();
-builder.Services.AddScoped<WateringRuleEngine>();
+//builder.Services.AddScoped<WateringRuleEngine>();
 builder.Services.AddScoped<DLIService>();
 builder.Services.AddSingleton<ITomatoDiseasePredictionService, OnnxTomatoDiseasePredictionService>();
 
@@ -42,7 +42,7 @@ builder.Services.AddCors(options =>
 
 // External
 builder.Services.AddHttpClient<WeatherService>();
-
+builder.Services.AddScoped<WateringRuleEngine>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

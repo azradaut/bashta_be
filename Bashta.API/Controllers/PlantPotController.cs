@@ -62,7 +62,12 @@ public class PlantPotController : ControllerBase
                 : request.MacAddress.Trim(),
             FirmwareVersion = string.IsNullOrWhiteSpace(request.FirmwareVersion)
                 ? null
-                : request.FirmwareVersion.Trim()
+                : request.FirmwareVersion.Trim(),
+
+                IsRainExposed = request.IsRainExposed,
+            SensorReadingIntervalMinutes = request.SensorReadingIntervalMinutes <= 0
+    ? 60
+    : request.SensorReadingIntervalMinutes
         };
 
         var created = await _potRepo.CreateAsync(pot);
@@ -97,9 +102,16 @@ public class PlantPotController : ControllerBase
             ? null
             : request.FirmwareVersion.Trim();
 
+        pot.IsRainExposed = request.IsRainExposed;
+
+        pot.SensorReadingIntervalMinutes = request.SensorReadingIntervalMinutes <= 0
+            ? 60
+            : request.SensorReadingIntervalMinutes;
+
         await _potRepo.UpdateAsync(pot);
 
         return NoContent();
+
     }
 
     [HttpDelete("{id}")]
@@ -121,6 +133,8 @@ public class PlantPotController : ControllerBase
             FirmwareVersion = pot.FirmwareVersion,
             IsActive = pot.IsActive,
             CreatedAt = pot.CreatedAt,
+            IsRainExposed = pot.IsRainExposed,
+            SensorReadingIntervalMinutes = pot.SensorReadingIntervalMinutes,
 
             Plants = pot.Plants
                 .Where(pl => pl.RemovedAt == null)
