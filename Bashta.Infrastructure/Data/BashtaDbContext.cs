@@ -93,6 +93,7 @@ public class BashtaDbContext : DbContext
             e.Property(x => x.PlantedAt).HasColumnName("planted_at");
             e.Property(x => x.RemovedAt).HasColumnName("removed_at");
             e.Property(x => x.Notes).HasColumnName("notes");
+            e.Property(x => x.ImagePath).HasColumnName("image_path");
 
             e.HasOne(x => x.PlantPot)
              .WithMany(x => x.Plants)
