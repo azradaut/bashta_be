@@ -12,9 +12,7 @@ public class PlantController : ControllerBase
     private readonly IPlantRepository _plantRepo;
     private readonly IPlantTypeRepository _plantTypeRepo;
 
-    public PlantController(
-        IPlantRepository plantRepo,
-        IPlantTypeRepository plantTypeRepo)
+    public PlantController(IPlantRepository plantRepo, IPlantTypeRepository plantTypeRepo)
     {
         _plantRepo = plantRepo;
         _plantTypeRepo = plantTypeRepo;
@@ -24,9 +22,7 @@ public class PlantController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var plant = await _plantRepo.GetByIdAsync(id);
-
-        if (plant is null)
-            return NotFound();
+        if (plant is null) return NotFound();
 
         return Ok(MapToResponse(plant));
     }
@@ -35,9 +31,7 @@ public class PlantController : ControllerBase
     public async Task<IActionResult> GetActiveByPot(int potId)
     {
         var plant = await _plantRepo.GetActiveByPotIdAsync(potId);
-
-        if (plant is null)
-            return NotFound();
+        if (plant is null) return NotFound();
 
         return Ok(MapToResponse(plant));
     }
@@ -46,8 +40,7 @@ public class PlantController : ControllerBase
     public async Task<IActionResult> GetPlantTypes()
     {
         var types = await _plantTypeRepo.GetAllAsync();
-
-        var response = types.Select(t => new PlantTypeDetail
+        return Ok(types.Select(t => new PlantTypeDetail
         {
             Id = t.Id,
             Name = t.Name,
@@ -57,73 +50,37 @@ public class PlantController : ControllerBase
             MinTemp = t.MinTemp,
             MaxTemp = t.MaxTemp,
             TargetDli = t.TargetDli
-        });
-
-        return Ok(response);
+        }));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] PlantRequest request)
     {
-        if (request.PotId <= 0)
-            return BadRequest("PotId je obavezan.");
-
-        if (request.PlantTypeId <= 0)
-            return BadRequest("PlantTypeId je obavezan.");
-
-        /*
-         * MVP pravilo:
-         * jedna saksija ima jednu aktivnu biljku.
-         * Ako već postoji aktivna biljka u toj saksiji, označava se kao uklonjena.
-         */
-        var existingActivePlant = await _plantRepo.GetActiveByPotIdAsync(request.PotId);
-
-        if (existingActivePlant is not null)
-        {
-            existingActivePlant.RemovedAt = DateOnly.FromDateTime(DateTime.UtcNow);
-            await _plantRepo.UpdateAsync(existingActivePlant);
-        }
-
         var plant = new Plant
         {
             PotId = request.PotId,
             PlantTypeId = request.PlantTypeId,
-            Nickname = string.IsNullOrWhiteSpace(request.Nickname)
-                ? null
-                : request.Nickname.Trim(),
+            Nickname = request.Nickname,
             PlantedAt = request.PlantedAt ?? DateOnly.FromDateTime(DateTime.UtcNow),
-            Notes = request.Notes,
-            ImagePath = null
+            Notes = request.Notes
         };
 
         var created = await _plantRepo.CreateAsync(plant);
-
-        return CreatedAtAction(
-            nameof(GetById),
-            new { id = created.Id },
-            created.Id);
+        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created.Id);
     }
 
     [HttpPatch("{id}/remove")]
     public async Task<IActionResult> RemovePlant(int id)
     {
         var plant = await _plantRepo.GetByIdAsync(id);
-
-        if (plant is null)
-            return NotFound();
-
-        if (plant.RemovedAt is not null)
-            return NoContent();
+        if (plant is null) return NotFound();
 
         plant.RemovedAt = DateOnly.FromDateTime(DateTime.UtcNow);
-
         await _plantRepo.UpdateAsync(plant);
-
         return NoContent();
     }
 
     [HttpPost("{id}/photo")]
-    [Consumes("multipart/form-data")]
     public async Task<IActionResult> UploadPhoto(int id, IFormFile image)
     {
         var plant = await _plantRepo.GetByIdAsync(id);
@@ -138,7 +95,7 @@ public class PlantController : ControllerBase
         var extension = Path.GetExtension(image.FileName).ToLowerInvariant();
 
         if (!allowedExtensions.Contains(extension))
-            return BadRequest("Dozvoljeni formati su JPG, JPEG, PNG i WEBP.");
+            return BadRequest("Dozvoljeni formati su JPG, PNG i WEBP.");
 
         var uploadsFolder = Path.Combine(
             Directory.GetCurrentDirectory(),

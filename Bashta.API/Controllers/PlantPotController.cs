@@ -2,11 +2,14 @@
 using Bashta.Core.Entities;
 using Bashta.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Bashta.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class PlantPotController : ControllerBase
 {
     private readonly IPlantPotRepository _potRepo;
@@ -16,9 +19,11 @@ public class PlantPotController : ControllerBase
         _potRepo = potRepo;
     }
 
-    [HttpGet("user/{userId}")]
-    public async Task<IActionResult> GetByUser(int userId)
+    [HttpGet("my")]
+    public async Task<IActionResult> GetMyPots()
     {
+        var userId = GetCurrentUserId();
+
         var pots = await _potRepo.GetByUserIdAsync(userId);
 
         var response = pots
@@ -35,17 +40,19 @@ public class PlantPotController : ControllerBase
 
         if (pot is null)
             return NotFound();
+        var userId = GetCurrentUserId();
+
+        if (pot.UserId != userId)
+            return Forbid();
 
         return Ok(MapToResponse(pot));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create(
-        [FromBody] PlantPotRequest request,
-        [FromQuery] int userId)
+    [FromBody] PlantPotRequest request)
     {
-        if (userId <= 0)
-            return BadRequest("UserId je obavezan.");
+        var userId = GetCurrentUserId();
 
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest("Naziv saksije je obavezan.");
@@ -62,7 +69,12 @@ public class PlantPotController : ControllerBase
                 : request.MacAddress.Trim(),
             FirmwareVersion = string.IsNullOrWhiteSpace(request.FirmwareVersion)
                 ? null
-                : request.FirmwareVersion.Trim()
+                : request.FirmwareVersion.Trim(),
+            IsRainExposed = request.IsRainExposed,
+            SensorReadingIntervalMinutes =
+                request.SensorReadingIntervalMinutes <= 0
+                    ? 60
+                    : request.SensorReadingIntervalMinutes
         };
 
         var created = await _potRepo.CreateAsync(pot);
@@ -82,6 +94,10 @@ public class PlantPotController : ControllerBase
 
         if (pot is null)
             return NotFound();
+        var userId = GetCurrentUserId();
+
+        if (pot.UserId != userId)
+            return Forbid();
 
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest("Naziv saksije je obavezan.");
@@ -97,9 +113,16 @@ public class PlantPotController : ControllerBase
             ? null
             : request.FirmwareVersion.Trim();
 
+        pot.IsRainExposed = request.IsRainExposed;
+
+        pot.SensorReadingIntervalMinutes = request.SensorReadingIntervalMinutes <= 0
+            ? 60
+            : request.SensorReadingIntervalMinutes;
+
         await _potRepo.UpdateAsync(pot);
 
         return NoContent();
+
     }
 
     [HttpDelete("{id}")]
@@ -108,6 +131,15 @@ public class PlantPotController : ControllerBase
         await _potRepo.DeleteAsync(id);
 
         return NoContent();
+    }
+    private int GetCurrentUserId()
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!int.TryParse(value, out var userId))
+            throw new UnauthorizedAccessException();
+
+        return userId;
     }
 
     private static PlantPotResponse MapToResponse(PlantPot pot)
@@ -121,6 +153,8 @@ public class PlantPotController : ControllerBase
             FirmwareVersion = pot.FirmwareVersion,
             IsActive = pot.IsActive,
             CreatedAt = pot.CreatedAt,
+            IsRainExposed = pot.IsRainExposed,
+            SensorReadingIntervalMinutes = pot.SensorReadingIntervalMinutes,
 
             Plants = pot.Plants
                 .Where(pl => pl.RemovedAt == null)

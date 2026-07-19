@@ -43,6 +43,8 @@ public class PlantPotRepository : IPlantPotRepository
         _context.Entry(pot).Property(p => p.MacAddress).IsModified = true;
         _context.Entry(pot).Property(p => p.FirmwareVersion).IsModified = true;
         _context.Entry(pot).Property(p => p.IsActive).IsModified = true;
+        _context.Entry(pot).Property(p => p.IsRainExposed).IsModified = true;
+        _context.Entry(pot).Property(p => p.SensorReadingIntervalMinutes).IsModified = true;
 
         await _context.SaveChangesAsync();
 
