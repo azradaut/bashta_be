@@ -225,7 +225,14 @@ public class WateringController : ControllerBase
                 decision.DecisionReason
             });
         }
-
+        if (request.AmountMl is < 50 or > 500)
+        {
+            return BadRequest(new
+            {
+                message =
+                    "Količina manuelnog zalijevanja mora biti između 50 i 500 ml."
+            });
+        }
         var amountMl =
             request.AmountMl
             ?? decision.RecommendedAmountMl;

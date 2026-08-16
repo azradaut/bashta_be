@@ -3,6 +3,7 @@ using Bashta.Core.Entities;
 using Bashta.Core.Interfaces;
 using Bashta.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Bashta.Infrastructure.External;
 
 namespace Bashta.API.Controllers;
 
@@ -20,10 +21,13 @@ public class SensorController : ControllerBase
     private readonly WateringRuleEngine _ruleEngine;
     private readonly DLIService _dliService;
     private readonly RecommendationService _recommendationService;
+    private readonly IPlantPotRepository _potRepo;
+    private readonly WeatherService _weatherService;
 
     public SensorController(
         ISensorReadingRepository sensorRepo,
         IPlantRepository plantRepo,
+        IPlantPotRepository potRepo,
         IWateringEventRepository wateringRepo,
         IDiseaseDetectionRepository diseaseDetectionRepo,
         IDiseaseRepository diseaseRepo,
@@ -31,19 +35,22 @@ public class SensorController : ControllerBase
         INotificationRepository notificationRepo,
         WateringRuleEngine ruleEngine,
         DLIService dliService,
-        RecommendationService recommendationService)
-    {
-        _sensorRepo = sensorRepo;
-        _plantRepo = plantRepo;
-        _wateringRepo = wateringRepo;
-        _diseaseDetectionRepo = diseaseDetectionRepo;
-        _diseaseRepo = diseaseRepo;
-        _recommendationRepo = recommendationRepo;
-        _notificationRepo = notificationRepo;
-        _ruleEngine = ruleEngine;
-        _dliService = dliService;
-        _recommendationService = recommendationService;
-    }
+        RecommendationService recommendationService,
+        WeatherService weatherService)
+        {
+            _sensorRepo = sensorRepo;
+            _plantRepo = plantRepo;
+            _potRepo = potRepo;
+            _wateringRepo = wateringRepo;
+            _diseaseDetectionRepo = diseaseDetectionRepo;
+            _diseaseRepo = diseaseRepo;
+            _recommendationRepo = recommendationRepo;
+            _notificationRepo = notificationRepo;
+            _ruleEngine = ruleEngine;
+            _dliService = dliService;
+            _recommendationService = recommendationService;
+            _weatherService = weatherService;
+        }
 
     [HttpGet("{potId}/latest")]
     public async Task<IActionResult> GetLatest(int potId)
@@ -96,38 +103,89 @@ public class SensorController : ControllerBase
         var plant = await _plantRepo.GetActiveByPotIdAsync(request.PotId);
         if (plant is null) return Ok(new { message = "Nema aktivne biljke u saksiji." });
 
+        var pot =
+    await _potRepo.GetByIdAsync(request.PotId);
+
+        if (pot is null)
+        {
+            return NotFound(new
+            {
+                message = "Saksija nije pronađena."
+            });
+        }
+
+        var weather =
+            await _weatherService.GetWeatherAsync();
+        var rainBeforeNextWindow = CalculateRainBeforeNextWateringWindow(weather,DateTime.Now);
+
         // 3. Provjeri bolest — uzmi zadnju detekciju
         var lastDetection = await _diseaseDetectionRepo.GetLatestByPlantIdAsync(plant.Id);
         Disease? activeDisease = null;
         if (lastDetection is not null && !lastDetection.IsHealthy && lastDetection.DiseaseId.HasValue)
             activeDisease = await _diseaseRepo.GetByIdAsync(lastDetection.DiseaseId.Value);
 
-        // 4. Rule engine — odluka o zalijevanju
-        var sinceUtc = DateTime.UtcNow.AddHours(-24);
 
-        var wateringCountLast24h =
-            await _wateringRepo.CountNonSkippedByPotIdSinceAsync(
-                request.PotId,
-                sinceUtc);
 
-        var decision = _ruleEngine.Evaluate(new WateringRuleInput
+        var decision =
+    _ruleEngine.Evaluate(
+        new WateringRuleInput
         {
             PlantId = plant.Id,
-            CurrentSoilMoisture = request.SoilMoisture,
-            MinRecommendedSoilMoisture = plant.PlantType.MinSoilMoisture,
-            MaxRecommendedSoilMoisture = plant.PlantType.MaxSoilMoisture,
-            CurrentTemperature = request.Temperature,
-            MaxTemperatureNext24h = request.Temperature,
-            CurrentLux = request.Lux,
-            IsRainExposed = false,
-            WeatherAvailable = false,
-            RainExpectedIn24h = false,
-            RainAmountNext24hMm = 0,
-            RainIntensity = "none",
-            HeatRiskNext24h = request.Temperature is >= 30,
-            WateringCountLast24h = wateringCountLast24h,
-            MaxWateringCountLast24h = 2,
-            LocalNow = DateTime.Now
+
+            CurrentSoilMoisture =
+                request.SoilMoisture,
+
+            MinRecommendedSoilMoisture =
+                plant.PlantType.MinSoilMoisture,
+
+            MaxRecommendedSoilMoisture =
+                plant.PlantType.MaxSoilMoisture,
+
+            // Ako je weather dostupan,
+            // koristimo vanjsku temperaturu.
+            // Inače fallback na senzor.
+            CurrentTemperature =
+                weather.IsAvailable
+                    ? weather.CurrentTemp
+                    : request.Temperature,
+
+            MaxTemperatureNext24h =
+                weather.IsAvailable
+                    ? weather.MaxTempNext24h
+                    : request.Temperature,
+
+            CurrentLux =
+                request.Lux,
+
+            IsRainExposed =
+                pot.IsRainExposed,
+
+            WeatherAvailable =
+                weather.IsAvailable,
+
+            RainExpectedIn24h =
+                weather.RainExpectedIn24h,
+
+            RainAmountNext24hMm =
+                weather.RainAmountNext24hMm,
+
+            RainIntensity =
+                weather.RainIntensity,
+
+            HeatRiskNext24h =
+                weather.IsAvailable
+                    ? weather.HeatRiskNext24h
+                    : request.Temperature is >= 30,
+
+            // Disease modifier ćemo povezati sljedeći.
+            DiseaseWateringModifierPercent = 0,
+
+            ActiveDiseaseName =
+                activeDisease?.NameLocal
+                ?? activeDisease?.Name,
+
+            LocalNow =
+                DateTime.Now
         });
 
         if (decision.IsAutomaticWateringAllowedNow)
@@ -146,7 +204,7 @@ public class SensorController : ControllerBase
                 SkipReason = null,
                 IsForced = false,
                 DecisionReason = decision.DecisionReason,
-                WeatherSummary = "Automatska odluka na osnovu senzorskog očitanja. Vremenska prognoza nije korištena u SensorController toku.",
+                WeatherSummary = BuildWeatherSummary(weather),
                 CreatedAt = DateTime.UtcNow
             });
 
@@ -171,7 +229,7 @@ public class SensorController : ControllerBase
                 SkipReason = decision.StatusMessage,
                 IsForced = false,
                 DecisionReason = decision.DecisionReason,
-                WeatherSummary = decision.WeatherImpactMessage,
+                WeatherSummary = BuildWeatherSummary(weather),
                 CreatedAt = DateTime.UtcNow
             });
         }
@@ -181,5 +239,119 @@ public class SensorController : ControllerBase
             message = "Očitavanje sačuvano.",
             wateringDecision = decision
         });
+    }
+    private static string BuildWeatherSummary(
+    WeatherResponse weather)
+    {
+        if (!weather.IsAvailable)
+        {
+            return
+                "Vremenska prognoza nije dostupna.";
+        }
+
+        var rainText =
+            weather.RainExpectedIn24h
+                ? $"Očekivana kiša: " +
+                  $"{weather.RainAmountNext24hMm:0.#} mm."
+                : "Kiša nije očekivana.";
+
+        var heatText =
+            weather.HeatRiskNext24h
+                ? $"Povećan toplotni rizik; " +
+                  $"maksimalna temperatura naredna 24 h: " +
+                  $"{weather.MaxTempNext24h:0.#} °C."
+                : $"Maksimalna temperatura naredna 24 h: " +
+                  $"{weather.MaxTempNext24h:0.#} °C.";
+
+        return
+            $"{weather.Description}. " +
+            $"Trenutno: {weather.CurrentTemp:0.#} °C. " +
+            $"{rainText} {heatText}";
+    }
+    private static (
+    bool RainExpected,
+    decimal RainAmountMm)
+    CalculateRainBeforeNextWateringWindow(
+        WeatherResponse weather,
+        DateTime localNow)
+    {
+        if (!weather.IsAvailable ||
+            weather.ForecastItems.Count == 0)
+        {
+            return (false, 0m);
+        }
+
+        var nextWindow =
+            GetNextWateringWindowStart(
+                localNow);
+
+        var nextWindowUtc =
+            nextWindow.ToUniversalTime();
+
+        var rainAmount =
+            weather.ForecastItems
+                .Where(f =>
+                    f.ForecastTimeUtc >
+                        DateTime.UtcNow &&
+                    f.ForecastTimeUtc <=
+                        nextWindowUtc)
+                .Sum(f => f.RainMm);
+
+        rainAmount =
+            Math.Round(
+                rainAmount,
+                1);
+
+        return (
+            rainAmount > 0,
+            rainAmount);
+    }
+
+    private static DateTime GetNextWateringWindowStart(
+    DateTime localNow)
+    {
+        var time =
+            localNow.TimeOfDay;
+
+        var morningStart =
+            new TimeSpan(5, 0, 0);
+
+        var morningEnd =
+            new TimeSpan(8, 0, 0);
+
+        var eveningStart =
+            new TimeSpan(19, 0, 0);
+
+        var eveningEnd =
+            new TimeSpan(22, 0, 0);
+
+        if (time < morningStart)
+        {
+            return localNow.Date
+                .AddHours(5);
+        }
+
+        if (time <= morningEnd)
+        {
+            return localNow.Date
+                .AddHours(19);
+        }
+
+        if (time < eveningStart)
+        {
+            return localNow.Date
+                .AddHours(19);
+        }
+
+        if (time <= eveningEnd)
+        {
+            return localNow.Date
+                .AddDays(1)
+                .AddHours(5);
+        }
+
+        return localNow.Date
+            .AddDays(1)
+            .AddHours(5);
     }
 }
