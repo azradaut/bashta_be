@@ -103,36 +103,76 @@ public class SensorController : ControllerBase
             activeDisease = await _diseaseRepo.GetByIdAsync(lastDetection.DiseaseId.Value);
 
         // 4. Rule engine — odluka o zalijevanju
-        var decision = _ruleEngine.Evaluate(
-            currentMoisture: request.SoilMoisture ?? 50,
-            temperature: request.Temperature ?? 20,
-            humidity: request.Humidity ?? 60,
-            lux: request.Lux ?? 0,
-            rainForecast: false,  // OpenWeatherMap integracija u WateringController
-            activeDisease: activeDisease
-        );
+        var sinceUtc = DateTime.UtcNow.AddHours(-24);
 
-        if (decision.ShouldWater)
+        var wateringCountLast24h =
+            await _wateringRepo.CountNonSkippedByPotIdSinceAsync(
+                request.PotId,
+                sinceUtc);
+
+        var decision = _ruleEngine.Evaluate(new WateringRuleInput
+        {
+            PlantId = plant.Id,
+            CurrentSoilMoisture = request.SoilMoisture,
+            MinRecommendedSoilMoisture = plant.PlantType.MinSoilMoisture,
+            MaxRecommendedSoilMoisture = plant.PlantType.MaxSoilMoisture,
+            CurrentTemperature = request.Temperature,
+            MaxTemperatureNext24h = request.Temperature,
+            CurrentLux = request.Lux,
+            IsRainExposed = false,
+            WeatherAvailable = false,
+            RainExpectedIn24h = false,
+            RainAmountNext24hMm = 0,
+            RainIntensity = "none",
+            HeatRiskNext24h = request.Temperature is >= 30,
+            WateringCountLast24h = wateringCountLast24h,
+            MaxWateringCountLast24h = 2,
+            LocalNow = DateTime.Now
+        });
+
+        if (decision.IsAutomaticWateringAllowedNow)
         {
             await _wateringRepo.CreateAsync(new WateringEvent
             {
                 PotId = request.PotId,
                 TriggeredBy = "auto",
-                SoilMoistureBefore = (int?)request.SoilMoisture,
-                Skipped = false
+                DurationSec = 10,
+                AmountMl = decision.RecommendedAmountMl,
+                SoilMoistureBefore = request.SoilMoisture is null
+                    ? null
+                    : (int?)Math.Round(request.SoilMoisture.Value),
+                SoilMoistureAfter = null,
+                Skipped = false,
+                SkipReason = null,
+                IsForced = false,
+                DecisionReason = decision.DecisionReason,
+                WeatherSummary = "Automatska odluka na osnovu senzorskog očitanja. Vremenska prognoza nije korištena u SensorController toku.",
+                CreatedAt = DateTime.UtcNow
             });
 
             await _recommendationService.CreateWateringRecommendationAsync(
-                plant.Id, plant.PlantPot.UserId, decision.Reason);
+                plant.Id,
+                plant.PlantPot.UserId,
+                decision.StatusMessage);
         }
-        else if (!string.IsNullOrEmpty(decision.SkipReason) || !decision.ShouldWater)
+        else
         {
             await _wateringRepo.CreateAsync(new WateringEvent
             {
                 PotId = request.PotId,
                 TriggeredBy = "auto",
+                DurationSec = null,
+                AmountMl = 0,
+                SoilMoistureBefore = request.SoilMoisture is null
+                    ? null
+                    : (int?)Math.Round(request.SoilMoisture.Value),
+                SoilMoistureAfter = null,
                 Skipped = true,
-                SkipReason = decision.Reason
+                SkipReason = decision.StatusMessage,
+                IsForced = false,
+                DecisionReason = decision.DecisionReason,
+                WeatherSummary = decision.WeatherImpactMessage,
+                CreatedAt = DateTime.UtcNow
             });
         }
 

@@ -9,5 +9,6 @@ public class DiseaseDetectionResponse
     public decimal? Confidence { get; set; }
     public bool IsHealthy { get; set; }
     public string? TreatmentRecommendation { get; set; }
+    public string? ImagePath { get; set; }
     public DateTime CreatedAt { get; set; }
 }

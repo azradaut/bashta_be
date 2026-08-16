@@ -12,7 +12,12 @@ public class WateringEvent
     public bool Skipped { get; set; } = false;
     public string? SkipReason { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsForced { get; set; } = false;
 
-    // Navigation
+    public string? DecisionReason { get; set; }
+
+    public string? WeatherSummary { get; set; }
+
+
     public PlantPot PlantPot { get; set; } = null!;
 }

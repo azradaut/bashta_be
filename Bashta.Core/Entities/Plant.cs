@@ -9,6 +9,7 @@ public class Plant
     public DateOnly PlantedAt { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow);
     public DateOnly? RemovedAt { get; set; }
     public string? Notes { get; set; }
+    public string? ImagePath { get; set; }
 
     // Navigation
     public PlantPot PlantPot { get; set; } = null!;

@@ -79,10 +79,9 @@ public class BashtaDbContext : DbContext
             e.Property(x => x.FirmwareVersion).HasColumnName("firmware_version");
             e.Property(x => x.IsActive).HasColumnName("is_active");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
-
-            e.HasOne(x => x.User)
-             .WithMany(x => x.PlantPots)
-             .HasForeignKey(x => x.UserId);
+            e.HasOne(x => x.User).WithMany(x => x.PlantPots).HasForeignKey(x => x.UserId);
+            e.Property(x => x.IsRainExposed).HasColumnName("is_rain_exposed");
+            e.Property(x => x.SensorReadingIntervalMinutes).HasColumnName("sensor_reading_interval_minutes");
         });
 
         modelBuilder.Entity<Plant>(e => {
@@ -93,6 +92,7 @@ public class BashtaDbContext : DbContext
             e.Property(x => x.PlantedAt).HasColumnName("planted_at");
             e.Property(x => x.RemovedAt).HasColumnName("removed_at");
             e.Property(x => x.Notes).HasColumnName("notes");
+            e.Property(x => x.ImagePath).HasColumnName("image_path");
 
             e.HasOne(x => x.PlantPot)
              .WithMany(x => x.Plants)
@@ -114,10 +114,10 @@ public class BashtaDbContext : DbContext
             e.Property(x => x.Skipped).HasColumnName("skipped");
             e.Property(x => x.SkipReason).HasColumnName("skip_reason");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
-
-            e.HasOne(x => x.PlantPot)
-             .WithMany(x => x.WateringEvents)
-             .HasForeignKey(x => x.PotId);
+            e.HasOne(x => x.PlantPot).WithMany(x => x.WateringEvents).HasForeignKey(x => x.PotId);
+            e.Property(x => x.IsForced).HasColumnName("is_forced");
+            e.Property(x => x.DecisionReason).HasColumnName("decision_reason");
+            e.Property(x => x.WeatherSummary).HasColumnName("weather_summary");
         });
 
         modelBuilder.Entity<DiseaseDetection>(e => {

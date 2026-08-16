@@ -80,6 +80,69 @@ public class PlantController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("{id}/photo")]
+    public async Task<IActionResult> UploadPhoto(int id, IFormFile image)
+    {
+        var plant = await _plantRepo.GetByIdAsync(id);
+
+        if (plant is null)
+            return NotFound();
+
+        if (image is null || image.Length == 0)
+            return BadRequest("Slika nije poslana.");
+
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
+        var extension = Path.GetExtension(image.FileName).ToLowerInvariant();
+
+        if (!allowedExtensions.Contains(extension))
+            return BadRequest("Dozvoljeni formati su JPG, PNG i WEBP.");
+
+        var uploadsFolder = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "wwwroot",
+            "uploads",
+            "plant-photos");
+
+        Directory.CreateDirectory(uploadsFolder);
+
+        DeleteFileIfExists(plant.ImagePath);
+
+        var fileName = $"plant-{id}-{Guid.NewGuid():N}{extension}";
+        var fullPath = Path.Combine(uploadsFolder, fileName);
+
+        await using (var stream = new FileStream(fullPath, FileMode.Create))
+        {
+            await image.CopyToAsync(stream);
+        }
+
+        plant.ImagePath = $"/uploads/plant-photos/{fileName}";
+
+        await _plantRepo.UpdateAsync(plant);
+
+        return Ok(new
+        {
+            PlantId = plant.Id,
+            ImagePath = plant.ImagePath
+        });
+    }
+
+    [HttpDelete("{id}/photo")]
+    public async Task<IActionResult> RemovePhoto(int id)
+    {
+        var plant = await _plantRepo.GetByIdAsync(id);
+
+        if (plant is null)
+            return NotFound();
+
+        DeleteFileIfExists(plant.ImagePath);
+
+        plant.ImagePath = null;
+
+        await _plantRepo.UpdateAsync(plant);
+
+        return NoContent();
+    }
+
     private static PlantResponse MapToResponse(Plant plant) => new()
     {
         Id = plant.Id,
@@ -87,6 +150,7 @@ public class PlantController : ControllerBase
         Nickname = plant.Nickname,
         PlantedAt = plant.PlantedAt,
         Notes = plant.Notes,
+        ImagePath = plant.ImagePath,
         PlantType = new PlantTypeDetail
         {
             Id = plant.PlantType.Id,
@@ -99,4 +163,22 @@ public class PlantController : ControllerBase
             TargetDli = plant.PlantType.TargetDli
         }
     };
+
+    private static void DeleteFileIfExists(string? relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+            return;
+
+        var normalizedPath = relativePath.TrimStart('/');
+
+        var fullPath = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "wwwroot",
+            normalizedPath.Replace('/', Path.DirectorySeparatorChar));
+
+        if (System.IO.File.Exists(fullPath))
+        {
+            System.IO.File.Delete(fullPath);
+        }
+    }
 }

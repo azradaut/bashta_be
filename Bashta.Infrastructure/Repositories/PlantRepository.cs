@@ -40,4 +40,11 @@ public class PlantRepository : IPlantRepository
         await _context.SaveChangesAsync();
         return plant;
     }
+
+    public async Task<PlantPot> UpdateAsync(PlantPot pot)
+    {
+        _context.PlantPots.Update(pot);
+        await _context.SaveChangesAsync();
+        return pot;
+    }
 }

@@ -9,31 +9,54 @@ public class NotificationRepository : INotificationRepository
 {
     private readonly BashtaDbContext _context;
 
-    public NotificationRepository(BashtaDbContext context)
+    public NotificationRepository(
+        BashtaDbContext context)
     {
         _context = context;
     }
 
-    public async Task<IEnumerable<Notification>> GetByUserIdAsync(int userId, bool unreadOnly = false) =>
-        await _context.Notifications
-            .Where(n => n.UserId == userId && (!unreadOnly || !n.IsRead))
+    public async Task<IEnumerable<Notification>> GetByUserIdAsync(
+        int userId,
+        bool unreadOnly = false)
+    {
+        return await _context.Notifications
+            .Where(n =>
+                n.UserId == userId &&
+                (!unreadOnly || !n.IsRead))
             .OrderByDescending(n => n.CreatedAt)
             .ToListAsync();
+    }
 
-    public async Task<Notification> CreateAsync(Notification notification)
+    public async Task<Notification> CreateAsync(
+        Notification notification)
     {
         _context.Notifications.Add(notification);
+
         await _context.SaveChangesAsync();
+
         return notification;
     }
 
-    public async Task MarkAsReadAsync(int id)
+    public async Task<bool> MarkAsReadAsync(
+        int id,
+        int userId)
     {
-        var n = await _context.Notifications.FindAsync(id);
-        if (n is not null)
+        var notification =
+            await _context.Notifications
+                .FirstOrDefaultAsync(n =>
+                    n.Id == id &&
+                    n.UserId == userId);
+
+        if (notification is null)
+            return false;
+
+        if (!notification.IsRead)
         {
-            n.IsRead = true;
+            notification.IsRead = true;
+
             await _context.SaveChangesAsync();
         }
+
+        return true;
     }
 }

@@ -14,23 +14,37 @@ public class WateringEventRepository : IWateringEventRepository
         _context = context;
     }
 
-    public async Task<IEnumerable<WateringEvent>> GetByPotIdAsync(int potId, int limit = 20) =>
-        await _context.WateringEvents
+    public async Task<List<WateringEvent>> GetByPotIdAsync(int potId, int limit = 20)
+    {
+        return await _context.WateringEvents
             .Where(w => w.PotId == potId)
             .OrderByDescending(w => w.CreatedAt)
             .Take(limit)
             .ToListAsync();
+    }
 
-    public async Task<WateringEvent?> GetLatestByPotIdAsync(int potId) =>
-        await _context.WateringEvents
+    public async Task<WateringEvent?> GetLatestByPotIdAsync(int potId)
+    {
+        return await _context.WateringEvents
             .Where(w => w.PotId == potId && !w.Skipped)
             .OrderByDescending(w => w.CreatedAt)
             .FirstOrDefaultAsync();
+    }
+
+    public async Task<int> CountNonSkippedByPotIdSinceAsync(int potId, DateTime sinceUtc)
+    {
+        return await _context.WateringEvents
+            .CountAsync(w =>
+                w.PotId == potId &&
+                !w.Skipped &&
+                w.CreatedAt >= sinceUtc);
+    }
 
     public async Task<WateringEvent> CreateAsync(WateringEvent wateringEvent)
     {
         _context.WateringEvents.Add(wateringEvent);
         await _context.SaveChangesAsync();
+
         return wateringEvent;
     }
 }

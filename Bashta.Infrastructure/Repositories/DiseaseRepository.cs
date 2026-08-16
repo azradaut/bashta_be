@@ -14,9 +14,19 @@ public class DiseaseRepository : IDiseaseRepository
         _context = context;
     }
 
-    public async Task<IEnumerable<Disease>> GetAllAsync() =>
-        await _context.Diseases.ToListAsync();
+    public async Task<List<Disease>> GetAllAsync()
+        => await _context.Diseases.ToListAsync();
 
-    public async Task<Disease?> GetByIdAsync(int id) =>
-        await _context.Diseases.FindAsync(id);
+    public async Task<Disease?> GetByIdAsync(int id)
+        => await _context.Diseases.FindAsync(id);
+
+    public async Task<Disease?> GetByNameAsync(string name)
+    {
+        var normalized = name.Trim();
+
+        return await _context.Diseases
+            .FirstOrDefaultAsync(d =>
+                EF.Functions.ILike(d.Name, normalized) ||
+                (d.NameLocal != null && EF.Functions.ILike(d.NameLocal, normalized)));
+    }
 }

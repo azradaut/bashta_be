@@ -17,6 +17,7 @@ public class PlantResponse
     public DateOnly PlantedAt { get; set; }
     public string? Notes { get; set; }
     public PlantTypeDetail PlantType { get; set; } = null!;
+    public string? ImagePath { get; set; }
 }
 
 public class PlantTypeDetail

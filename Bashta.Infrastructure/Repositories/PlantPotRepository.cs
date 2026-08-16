@@ -36,8 +36,18 @@ public class PlantPotRepository : IPlantPotRepository
 
     public async Task<PlantPot> UpdateAsync(PlantPot pot)
     {
-        _context.PlantPots.Update(pot);
+        _context.PlantPots.Attach(pot);
+
+        _context.Entry(pot).Property(p => p.Name).IsModified = true;
+        _context.Entry(pot).Property(p => p.Location).IsModified = true;
+        _context.Entry(pot).Property(p => p.MacAddress).IsModified = true;
+        _context.Entry(pot).Property(p => p.FirmwareVersion).IsModified = true;
+        _context.Entry(pot).Property(p => p.IsActive).IsModified = true;
+        _context.Entry(pot).Property(p => p.IsRainExposed).IsModified = true;
+        _context.Entry(pot).Property(p => p.SensorReadingIntervalMinutes).IsModified = true;
+
         await _context.SaveChangesAsync();
+
         return pot;
     }
 
