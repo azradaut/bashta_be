@@ -585,7 +585,7 @@ public class WateringRuleEngine
         if (rain < 1m)
         {
             decision.WeatherImpactMessage =
-                $"Do narednog termina očekuje se samo {rain:0.#} mm padavina. " +
+                $"Do kraja narednog preporučenog termina očekuje se samo {rain:0.#} mm padavina. " +
                 "Količina je premala da bi uticala na odluku zalijevanja.";
 
             return;
@@ -600,7 +600,7 @@ public class WateringRuleEngine
                     : 0.85m;
 
             decision.WeatherImpactMessage =
-                $"Do narednog termina očekuje se {rain:0.#} mm padavina. " +
+                $"Do kraja narednog preporučenog termina očekuje se {rain:0.#} mm padavina. " +
                 "Prognoza je uzeta u obzir kroz blago smanjenje količine vode.";
 
             return;
@@ -634,7 +634,7 @@ public class WateringRuleEngine
             amount *= 0.70m;
 
             decision.WeatherImpactMessage =
-                $"Do narednog termina očekuje se {rain:0.#} mm padavina, " +
+                $"Do kraja narednog preporučenog termina očekuje se {rain:0.#} mm padavina, " +
                 "ali je vlažnost tla kritično niska. " +
                 "Zalijevanje se izvršava smanjenom količinom " +
                 "umjesto potpunog odgađanja.";
@@ -646,7 +646,7 @@ public class WateringRuleEngine
         amount *= 0.60m;
 
         decision.WeatherImpactMessage =
-            $"Do narednog termina očekuje se {rain:0.#} mm obilnijih padavina, " +
+            $"Do kraja narednog preporučenog termina očekuje se {rain:0.#} mm obilnijih padavina, " +
             "ali je vlažnost tla kritično niska. " +
             "Primjenjuje se ograničena interventna količina vode " +
             "do očekivanih padavina.";
@@ -864,7 +864,7 @@ public class WateringRuleEngine
             $"baseAmount={decision.BaseAmountMl}ml; " +
             $"rainExposed={input.IsRainExposed}; " +
             $"rain24h={input.RainAmountNext24hMm:0.#}mm; " +
-            $"rainBeforeNextWindow={input.RainAmountBeforeNextWindowMm:0.#}mm; " +
+            $"rainUntilNextWindowEnd={input.RainAmountBeforeNextWindowMm:0.#}mm; " +
             $"diseaseModifier={input.DiseaseWateringModifier:0.00}x; " +
             $"recommended={decision.RecommendedAmountMl}ml; " +
             $"waitingForRain={decision.WaitingForRain}; " +

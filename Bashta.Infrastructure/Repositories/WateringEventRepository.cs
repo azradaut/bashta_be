@@ -30,6 +30,17 @@ public class WateringEventRepository : IWateringEventRepository
             .OrderByDescending(w => w.CreatedAt)
             .FirstOrDefaultAsync();
     }
+    public async Task<int> CountManualNonSkippedByPotIdSinceAsync(
+    int potId,
+    DateTime sinceUtc)
+    {
+        return await _context.WateringEvents
+            .CountAsync(x =>
+                x.PotId == potId &&
+                x.CreatedAt >= sinceUtc &&
+                !x.Skipped &&
+                x.TriggeredBy == "manual");
+    }
 
     public async Task<int> CountNonSkippedByPotIdSinceAsync(int potId, DateTime sinceUtc)
     {

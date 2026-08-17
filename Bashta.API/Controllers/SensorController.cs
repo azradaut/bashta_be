@@ -2,8 +2,9 @@
 using Bashta.Core.Entities;
 using Bashta.Core.Interfaces;
 using Bashta.Core.Services;
-using Microsoft.AspNetCore.Mvc;
 using Bashta.Infrastructure.External;
+using Microsoft.AspNetCore.Mvc;
+using System.Timers;
 
 namespace Bashta.API.Controllers;
 
@@ -116,7 +117,10 @@ public class SensorController : ControllerBase
 
         var weather =
             await _weatherService.GetWeatherAsync();
-        var rainBeforeNextWindow = CalculateRainBeforeNextWateringWindow(weather,DateTime.Now);
+        var rainUntilNextWindowEnd =
+    CalculateRainUntilNextWateringWindowEnd(
+        weather,
+        DateTime.Now);
 
         // 3. Provjeri bolest — uzmi zadnju detekciju
         var lastDetection = await _diseaseDetectionRepo.GetLatestByPlantIdAsync(plant.Id);
@@ -170,10 +174,10 @@ public class SensorController : ControllerBase
                 weather.RainAmountNext24hMm,
 
             RainExpectedBeforeNextWindow =
-    rainBeforeNextWindow.RainExpected,
+    rainUntilNextWindowEnd.RainExpected,
 
             RainAmountBeforeNextWindowMm =
-    rainBeforeNextWindow.RainAmountMm,
+    rainUntilNextWindowEnd.RainAmountMm,
 
             RainIntensity =
                 weather.RainIntensity,
@@ -278,9 +282,10 @@ public class SensorController : ControllerBase
             $"{rainText} {heatText}";
     }
     private static (
+    
     bool RainExpected,
     decimal RainAmountMm)
-    CalculateRainBeforeNextWateringWindow(
+    CalculateRainUntilNextWateringWindowEnd(
         WeatherResponse weather,
         DateTime localNow)
     {
@@ -290,33 +295,31 @@ public class SensorController : ControllerBase
             return (false, 0m);
         }
 
-        var nextWindow =
-            GetNextWateringWindowStart(
+        var decisionHorizon =
+            GetNextWateringDecisionHorizon(
                 localNow);
 
-        var nextWindowUtc =
-            nextWindow.ToUniversalTime();
+        var decisionHorizonUtc =
+            decisionHorizon.ToUniversalTime();
 
         var rainAmount =
-            weather.ForecastItems
-                .Where(f =>
-                    f.ForecastTimeUtc >
-                        DateTime.UtcNow &&
-                    f.ForecastTimeUtc <=
-                        nextWindowUtc)
-                .Sum(f => f.RainMm);
+        weather.ForecastItems
+            .Where(f =>
+                f.ForecastTimeUtc > DateTime.UtcNow &&
+                f.ForecastTimeUtc <= decisionHorizonUtc)
+            .Sum(f => f.RainMm);
 
-        rainAmount =
-            Math.Round(
-                rainAmount,
-                1);
+    rainAmount =
+        Math.Round(
+            rainAmount,
+            1);
 
-        return (
-            rainAmount > 0,
-            rainAmount);
-    }
+    return (
+        rainAmount > 0,
+        rainAmount);
+}
 
-    private static DateTime GetNextWateringWindowStart(
+private static DateTime GetNextWateringDecisionHorizon(
     DateTime localNow)
     {
         var time =
@@ -334,33 +337,42 @@ public class SensorController : ControllerBase
         var eveningEnd =
             new TimeSpan(22, 0, 0);
 
+        // Prije jutarnjeg termina:
+        // gledamo prognozu do 08:00.
         if (time < morningStart)
         {
             return localNow.Date
-                .AddHours(5);
-        }
-
-        if (time <= morningEnd)
-        {
-            return localNow.Date
-                .AddHours(19);
-        }
-
-        if (time < eveningStart)
-        {
-            return localNow.Date
-                .AddHours(19);
-        }
-
-        if (time <= eveningEnd)
-        {
-            return localNow.Date
-                .AddDays(1)
-                .AddHours(5);
-        }
-
-        return localNow.Date
-            .AddDays(1)
-            .AddHours(5);
+            .AddHours(8);
     }
+
+    // Tokom jutarnjeg termina:
+    // gledamo do njegovog kraja.
+    if (time <= morningEnd)
+    {
+        return localNow.Date
+            .AddHours(8);
+    }
+
+    // Između jutarnjeg i večernjeg termina:
+    // gledamo do 22:00.
+    if (time < eveningStart)
+{
+    return localNow.Date
+        .AddHours(22);
+}
+
+// Tokom večernjeg termina:
+// gledamo do njegovog kraja.
+if (time <= eveningEnd)
+{
+    return localNow.Date
+        .AddHours(22);
+}
+
+// Poslije večernjeg termina:
+// gledamo do kraja sutrašnjeg jutarnjeg termina.
+return localNow.Date
+    .AddDays(1)
+    .AddHours(8);
+}
 }
