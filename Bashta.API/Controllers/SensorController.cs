@@ -169,6 +169,12 @@ public class SensorController : ControllerBase
             RainAmountNext24hMm =
                 weather.RainAmountNext24hMm,
 
+            RainExpectedBeforeNextWindow =
+    rainBeforeNextWindow.RainExpected,
+
+            RainAmountBeforeNextWindowMm =
+    rainBeforeNextWindow.RainAmountMm,
+
             RainIntensity =
                 weather.RainIntensity,
 
@@ -177,13 +183,13 @@ public class SensorController : ControllerBase
                     ? weather.HeatRiskNext24h
                     : request.Temperature is >= 30,
 
-            // Disease modifier ćemo povezati sljedeći.
-            DiseaseWateringModifierPercent = 0,
+            DiseaseWateringModifier =
+    activeDisease?.WateringModifier
+    ?? 1.00m,
 
             ActiveDiseaseName =
-                activeDisease?.NameLocal
-                ?? activeDisease?.Name,
-
+    activeDisease?.NameLocal
+    ?? activeDisease?.Name,
             LocalNow =
                 DateTime.Now
         });
@@ -226,7 +232,10 @@ public class SensorController : ControllerBase
                     : (int?)Math.Round(request.SoilMoisture.Value),
                 SoilMoistureAfter = null,
                 Skipped = true,
-                SkipReason = decision.StatusMessage,
+                SkipReason =
+    decision.WarningMessage
+    ?? decision.WeatherImpactMessage
+    ?? decision.StatusMessage,
                 IsForced = false,
                 DecisionReason = decision.DecisionReason,
                 WeatherSummary = BuildWeatherSummary(weather),

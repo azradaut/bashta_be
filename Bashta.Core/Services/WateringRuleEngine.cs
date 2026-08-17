@@ -16,6 +16,7 @@ public class WateringRuleInput
 
     public int? CurrentLux { get; set; }
 
+    // Weather context
     public bool IsRainExposed { get; set; }
 
     public bool WeatherAvailable { get; set; }
@@ -24,34 +25,37 @@ public class WateringRuleInput
 
     public decimal RainAmountNext24hMm { get; set; }
 
+    public bool RainExpectedBeforeNextWindow { get; set; }
+
+    public decimal RainAmountBeforeNextWindowMm { get; set; }
+
     public string RainIntensity { get; set; } = "none";
 
     public bool HeatRiskNext24h { get; set; }
 
     /*
-     * Za sada ostavljamo properties radi kompatibilnosti
-     * sa postojećim controllerima/DTO-ovima,
-     * ali se više NE koriste kao blokada.
+     * Ostavljeno radi kompatibilnosti sa starijim
+     * controllerima/DTO-ovima.
+     *
+     * Više se NE koristi kao blokada zalijevanja.
      */
     public int WateringCountLast24h { get; set; }
 
     public int MaxWateringCountLast24h { get; set; }
 
     /*
-     * Kasnije ćemo ga popunjavati iz posljednje
-     * relevantne detekcije bolesti.
+     * Konfiguracijski koeficijent zdravstvenog stanja.
      *
-     * Primjer:
-     * -10 = smanji količinu 10 %
-     * +10 = povećaj količinu 10 %
-     * 0   = bez korekcije
+     * 1.00 = bez korekcije
+     * <1.00 = smanjenje količine
+     * >1.00 = povećanje količine
+     *
+     * Engine ga sigurnosno ograničava
+     * na raspon 0.90–1.10.
      */
-    public int DiseaseWateringModifierPercent { get; set; }
+    public decimal DiseaseWateringModifier { get; set; } = 1.00m;
 
     public string? ActiveDiseaseName { get; set; }
-    public bool RainExpectedBeforeNextWindow { get; set; }
-
-    public decimal RainAmountBeforeNextWindowMm { get; set; }
 
     public DateTime LocalNow { get; set; } = DateTime.Now;
 }
@@ -100,7 +104,6 @@ public class WateringDecision
         IsWateringRecommended
             ? null
             : StatusMessage;
-    
 }
 
 public class WateringRuleEngine
@@ -109,8 +112,8 @@ public class WateringRuleEngine
      * Konfiguracija PROTOTIPA.
      *
      * Ovo nisu univerzalne agronomske vrijednosti.
-     * Kasnije ih u radu opisujemo kao konfiguracijske
-     * parametre prototipske decision-support logike.
+     * Parametri predstavljaju konfiguraciju
+     * prototipske decision-support logike.
      */
 
     private const int MinimumDoseMl = 50;
@@ -129,7 +132,7 @@ public class WateringRuleEngine
     private const int CriticalDeficitPoints = 15;
 
     /*
-     * Ako je jako toplo, osnovna količina može
+     * Ako je jako toplo, količina može
      * biti povećana za 10 %.
      */
     private const decimal HeatMultiplier = 1.10m;
@@ -179,6 +182,12 @@ public class WateringRuleEngine
                         ? 1m
                         : 0m,
 
+                RainExpectedBeforeNextWindow =
+                    false,
+
+                RainAmountBeforeNextWindowMm =
+                    0m,
+
                 RainIntensity =
                     rainForecast
                         ? "light"
@@ -189,7 +198,8 @@ public class WateringRuleEngine
                 HeatRiskNext24h =
                     temperature is >= 30m,
 
-                DiseaseWateringModifierPercent = 0,
+                DiseaseWateringModifier =
+                    1.00m,
 
                 LocalNow =
                     DateTime.Now
@@ -234,14 +244,15 @@ public class WateringRuleEngine
         }
 
         /*
-         * NAMJERNO nema više:
+         * Više nema blokade tipa:
          *
-         * if (WateringCountLast24h >= 2) ...
+         * WateringCountLast24h >= 2
          *
-         * Novo senzorsko stanje je glavni kriterij.
+         * Novo senzorsko stanje je
+         * primarni kriterij odluke.
          */
 
-        // 2. Bez senzorskog očitanja nema automatske odluke
+        // 2. Nema očitanja vlažnosti
         if (input.CurrentSoilMoisture is null)
         {
             decision.CanWater = true;
@@ -273,7 +284,7 @@ public class WateringRuleEngine
             return decision;
         }
 
-        // 3. Mora postojati preporučeni minimum
+        // 3. Nema definisanog minimalnog praga
         if (input.MinRecommendedSoilMoisture is null)
         {
             decision.CanWater = true;
@@ -295,13 +306,7 @@ public class WateringRuleEngine
         var minMoisture =
             input.MinRecommendedSoilMoisture.Value;
 
-        /*
-         * 4. Kritični prag
-         *
-         * Primjer:
-         * minimum = 70
-         * critical = 55
-         */
+        // 4. Kritični prag
         var criticalThreshold =
             Math.Max(
                 0,
@@ -315,10 +320,7 @@ public class WateringRuleEngine
             currentMoisture <=
             criticalThreshold;
 
-        /*
-         * 5. Ako je vlaga već u ili iznad
-         * preporučenog minimuma -> nema potrebe.
-         */
+        // 5. Vlažnost je već dovoljna
         if (currentMoisture >= minMoisture)
         {
             decision.CanWater = true;
@@ -334,16 +336,22 @@ public class WateringRuleEngine
                 input.MaxRecommendedSoilMoisture.Value)
             {
                 decision.StatusMessage =
-                    "Vlažnost tla je iznad preporučenog opsega. Zalijevanje trenutno nije preporučeno.";
+                    "Vlažnost tla je iznad preporučenog opsega. " +
+                    "Zalijevanje trenutno nije preporučeno.";
             }
             else
             {
                 decision.StatusMessage =
-                    "Vlažnost tla je u preporučenom opsegu. Zalijevanje trenutno nije potrebno.";
+                    "Vlažnost tla je u preporučenom opsegu. " +
+                    "Zalijevanje trenutno nije potrebno.";
             }
 
             decision.WeatherImpactMessage =
                 BuildNoWaterWeatherMessage(
+                    input);
+
+            decision.DiseaseImpactMessage =
+                BuildNoWaterDiseaseMessage(
                     input);
 
             decision.DecisionReason =
@@ -354,9 +362,7 @@ public class WateringRuleEngine
             return decision;
         }
 
-        /*
-         * 6. Deficit vlage
-         */
+        // 6. Deficit vlage
         var deficit =
             minMoisture -
             currentMoisture;
@@ -365,15 +371,9 @@ public class WateringRuleEngine
             deficit;
 
         /*
-         * 7. Proporcionalni proračun
+         * 7. Osnovna količina:
          *
-         * Q = 50 + deficit * 10
-         *
-         * Primjer:
-         * min = 70
-         * current = 42
-         * deficit = 28
-         * Q = 330 ml
+         * Q = 50 + deficit × 10
          */
         var baseAmount =
             MinimumDoseMl +
@@ -393,26 +393,22 @@ public class WateringRuleEngine
         decimal adjustedAmount =
             baseAmount;
 
-        /*
-         * 8. Korekcija zbog toplote
-         */
+        // 8. Korekcija zbog toplote
         if (IsHeatRisk(input))
         {
             adjustedAmount *=
                 HeatMultiplier;
         }
 
-        /*
-         * 9. Kiša
-         */
+        // 9. Korekcija zbog prognoze
         ApplyRainLogic(
             input,
             decision,
             ref adjustedAmount);
 
         /*
-         * Ako kiša nalaže potpuno čekanje,
-         * nema potrebe za daljim korekcijama.
+         * Ako kiša opravdava potpuno čekanje,
+         * završavamo odluku ovdje.
          */
         if (decision.WaitingForRain)
         {
@@ -425,8 +421,14 @@ public class WateringRuleEngine
             decision.IsAutomaticWateringAllowedNow = false;
 
             decision.StatusMessage =
-                "Vlažnost tla je ispod preporučenog nivoa, ali nije u kritičnoj zoni. " +
-                "Automatsko zalijevanje je privremeno odgođeno zbog očekivanih padavina.";
+                "Vlažnost tla je ispod preporučenog nivoa, " +
+                "ali nije u kritičnoj zoni. " +
+                "Automatsko zalijevanje je privremeno odgođeno " +
+                "zbog očekivanih padavina.";
+
+            decision.DiseaseImpactMessage =
+                BuildNoWaterDiseaseMessage(
+                    input);
 
             decision.DecisionReason =
                 BuildDecisionReason(
@@ -436,21 +438,13 @@ public class WateringRuleEngine
             return decision;
         }
 
-        /*
-         * 10. Disease modifier
-         *
-         * Za sada će biti 0.
-         * Kasnije ćemo ga puniti samo za bolesti
-         * za koje imamo opravdanu konfiguraciju.
-         */
+        // 10. Korekcija zbog zdravstvenog stanja
         ApplyDiseaseAdjustment(
             input,
             decision,
             ref adjustedAmount);
 
-        /*
-         * 11. Konačna sigurnosna granica
-         */
+        // 11. Konačni sigurnosni raspon
         var finalAmount =
             (int)Math.Round(
                 adjustedAmount);
@@ -472,9 +466,7 @@ public class WateringRuleEngine
                 ? $"Vlažnost tla je kritično niska. Zalijevanje je preporučeno u količini od {finalAmount} ml."
                 : $"Vlažnost tla je ispod preporučenog opsega. Preporučena količina je {finalAmount} ml.";
 
-        /*
-         * 12. Termin i jako sunce
-         */
+        // 12. Termin i jako sunce
         var isPreferredTime =
             IsPreferredWateringTime(
                 input.LocalNow);
@@ -483,6 +475,13 @@ public class WateringRuleEngine
             IsStrongSun(
                 input.LocalNow,
                 input.CurrentLux);
+        if (decision.IsWateringRecommended &&
+    !decision.IsCriticalMoisture &&
+    !isPreferredTime)
+        {
+            decision.WarningMessage =
+                "Zalijevanje je preporučeno, ali automatska intervencija je odgođena do narednog preporučenog termina.";
+        }
 
         if (isStrongSun)
         {
@@ -491,11 +490,8 @@ public class WateringRuleEngine
                 "Preporučuje se zalijevanje ujutro ili navečer.";
 
             /*
-             * Kritično niska vlaga:
-             * ne blokiramo intervenciju samo zbog termina.
-             *
-             * Nekritična:
-             * automatski čekamo bolji termin.
+             * Kod nekritične vlage sistem čeka
+             * pogodniji termin.
              */
             if (!decision.IsCriticalMoisture)
             {
@@ -504,13 +500,22 @@ public class WateringRuleEngine
             }
         }
 
+        /*
+         * Kritično stanje može nadjačati
+         * preferred-time ograničenje.
+         */
         if (decision.IsCriticalMoisture &&
-    !isPreferredTime)
+            !isPreferredTime)
         {
             decision.WarningMessage =
-                "Vlažnost tla je u kritičnoj zoni. " +
-                "Automatsko zalijevanje je dozvoljeno i izvan preporučenog termina.";
+                isStrongSun
+                    ? "Vlažnost tla je u kritičnoj zoni. " +
+                      "Automatsko zalijevanje je dozvoljeno i izvan preporučenog termina, " +
+                      "iako trenutno postoje nepovoljni uslovi jakog sunca."
+                    : "Vlažnost tla je u kritičnoj zoni. " +
+                      "Automatsko zalijevanje je dozvoljeno i izvan preporučenog termina.";
         }
+
         decision.IsAutomaticWateringAllowedNow =
             decision.IsWateringRecommended &&
             (
@@ -532,9 +537,9 @@ public class WateringRuleEngine
     }
 
     private static void ApplyRainLogic(
-    WateringRuleInput input,
-    WateringDecision decision,
-    ref decimal amount)
+        WateringRuleInput input,
+        WateringDecision decision,
+        ref decimal amount)
     {
         if (!input.WeatherAvailable)
         {
@@ -545,31 +550,29 @@ public class WateringRuleEngine
             return;
         }
 
-        /*
-         * Saksija koja ne kisne ne može koristiti
-         * padavine kao zamjenu za zalijevanje.
-         */
         if (!input.IsRainExposed)
         {
             decision.WeatherImpactMessage =
                 input.RainExpectedIn24h
-                    ? "Kiša je očekivana, ali saksija nije izložena padavinama. Prognoza ne mijenja količinu zalijevanja."
-                    : "Kiša nije očekivana. Vremenski kontekst ne zahtijeva korekciju količine.";
+                    ? "Kiša je očekivana, ali saksija nije izložena padavinama. " +
+                      "Prognoza ne mijenja količinu zalijevanja."
+                    : "Kiša nije očekivana. " +
+                      "Vremenski kontekst ne zahtijeva korekciju količine.";
 
             return;
         }
 
         /*
-         * Za odluku nas zanima kiša DO NAREDNOG
-         * preporučenog termina, a ne samo činjenica
-         * da će možda pasti u naredna 24 sata.
+         * Za odluku je relevantna kiša prije
+         * narednog preporučenog termina.
          */
         if (!input.RainExpectedBeforeNextWindow ||
             input.RainAmountBeforeNextWindowMm <= 0)
         {
             decision.WeatherImpactMessage =
                 input.RainExpectedIn24h
-                    ? "Padavine se očekuju u naredna 24 sata, ali ne prije narednog preporučenog termina zalijevanja."
+                    ? "Padavine se očekuju u naredna 24 sata, " +
+                      "ali ne prije narednog preporučenog termina zalijevanja."
                     : "Kiša nije očekivana prije narednog preporučenog termina zalijevanja.";
 
             return;
@@ -578,10 +581,7 @@ public class WateringRuleEngine
         var rain =
             input.RainAmountBeforeNextWindowMm;
 
-        /*
-         * < 1 mm:
-         * vrlo mala količina ne utiče na odluku.
-         */
+        // < 1 mm: zanemariv uticaj
         if (rain < 1m)
         {
             decision.WeatherImpactMessage =
@@ -591,10 +591,7 @@ public class WateringRuleEngine
             return;
         }
 
-        /*
-         * 1–3 mm:
-         * mala korekcija, ali ne odgađamo potpuno.
-         */
+        // 1–3 mm: blaga korekcija
         if (rain < 3m)
         {
             amount *=
@@ -610,8 +607,8 @@ public class WateringRuleEngine
         }
 
         /*
-         * >= 3 mm i vlaga NIJE kritična:
-         * možemo čekati kišu.
+         * >= 3 mm, a vlaga nije kritična:
+         * moguće je čekati kišu.
          */
         if (!decision.IsCriticalMoisture)
         {
@@ -620,18 +617,18 @@ public class WateringRuleEngine
 
             decision.WeatherImpactMessage =
                 $"Do narednog preporučenog termina očekuje se {rain:0.#} mm padavina. " +
-                "Vlažnost tla je ispod optimuma, ali nije kritično niska, pa se automatsko zalijevanje odgađa.";
+                "Vlažnost tla je ispod optimuma, ali nije kritično niska, " +
+                "pa se automatsko zalijevanje odgađa.";
 
             return;
         }
 
         /*
          * Kritično suho tlo:
-         * nikad ne čekamo potpuno.
-         *
-         * 3–7 mm -> 70 % osnovne količine
-         * >= 7 mm -> 60 % osnovne količine
+         * intervencija se ne odgađa potpuno.
          */
+
+        // 3–7 mm
         if (rain < 7m)
         {
             amount *= 0.70m;
@@ -639,17 +636,20 @@ public class WateringRuleEngine
             decision.WeatherImpactMessage =
                 $"Do narednog termina očekuje se {rain:0.#} mm padavina, " +
                 "ali je vlažnost tla kritično niska. " +
-                "Zalijevanje se izvršava smanjenom količinom umjesto potpunog odgađanja.";
+                "Zalijevanje se izvršava smanjenom količinom " +
+                "umjesto potpunog odgađanja.";
 
             return;
         }
 
+        // >= 7 mm
         amount *= 0.60m;
 
         decision.WeatherImpactMessage =
             $"Do narednog termina očekuje se {rain:0.#} mm obilnijih padavina, " +
             "ali je vlažnost tla kritično niska. " +
-            "Primjenjuje se ograničena interventna količina vode do očekivanih padavina.";
+            "Primjenjuje se ograničena interventna količina vode " +
+            "do očekivanih padavina.";
     }
 
     private static void ApplyDiseaseAdjustment(
@@ -657,35 +657,61 @@ public class WateringRuleEngine
         WateringDecision decision,
         ref decimal amount)
     {
-        if (input.DiseaseWateringModifierPercent == 0)
+        var modifier =
+            input.DiseaseWateringModifier <= 0
+                ? 1.00m
+                : input.DiseaseWateringModifier;
+
+        /*
+         * Sigurnosna granica prototipa:
+         * maksimalna korekcija ±10 %.
+         */
+        modifier =
+            Math.Clamp(
+                modifier,
+                0.90m,
+                1.10m);
+
+        if (modifier == 1.00m)
         {
             decision.DiseaseImpactMessage =
                 string.IsNullOrWhiteSpace(
                     input.ActiveDiseaseName)
                     ? "Nema aktivne korekcije zalijevanja povezane sa zdravstvenim stanjem biljke."
-                    : $"Detektovano stanje \"{input.ActiveDiseaseName}\" nema definisanu korekciju zalijevanja.";
+                    : $"Detektovano stanje \"{input.ActiveDiseaseName}\" " +
+                      "ne mijenja preporučenu količinu zalijevanja.";
 
             return;
         }
 
-        /*
-         * Sigurnosno ograničenje:
-         * bolest smije korigovati najviše ±20 %.
-         */
-        var modifier =
-            Math.Clamp(
-                input.DiseaseWateringModifierPercent,
-                -20,
-                20);
+        var amountBeforeDiseaseAdjustment =
+            amount;
 
         amount *=
-            1m +
-            modifier / 100m;
+            modifier;
 
-        decision.DiseaseImpactMessage =
-            modifier > 0
-                ? $"Zbog detektovanog zdravstvenog stanja količina vode je povećana za {modifier}%."
-                : $"Zbog detektovanog zdravstvenog stanja količina vode je smanjena za {Math.Abs(modifier)}%.";
+        var changePercent =
+            (modifier - 1.00m) *
+            100m;
+
+        if (changePercent < 0)
+        {
+            decision.DiseaseImpactMessage =
+                $"Detektovano stanje \"{input.ActiveDiseaseName}\" " +
+                $"primjenjuje koeficijent {modifier:0.00}. " +
+                $"Preporučena količina je smanjena za " +
+                $"{Math.Abs(changePercent):0}% " +
+                $"({amountBeforeDiseaseAdjustment:0} ml → {amount:0} ml).";
+        }
+        else
+        {
+            decision.DiseaseImpactMessage =
+                $"Detektovano stanje \"{input.ActiveDiseaseName}\" " +
+                $"primjenjuje koeficijent {modifier:0.00}. " +
+                $"Preporučena količina je povećana za " +
+                $"{changePercent:0}% " +
+                $"({amountBeforeDiseaseAdjustment:0} ml → {amount:0} ml).";
+        }
     }
 
     private static bool IsHeatRisk(
@@ -710,15 +736,31 @@ public class WateringRuleEngine
             input.IsRainExposed)
         {
             return
-                "Očekuju se padavine, a trenutna vlažnost tla je već zadovoljavajuća. Zalijevanje nije potrebno.";
+                "Očekuju se padavine, a trenutna vlažnost tla je već zadovoljavajuća. " +
+                "Zalijevanje nije potrebno.";
         }
 
         return
             "Vremenski uslovi trenutno ne zahtijevaju dodatnu korekciju odluke.";
     }
 
+    private static string BuildNoWaterDiseaseMessage(
+        WateringRuleInput input)
+    {
+        if (string.IsNullOrWhiteSpace(
+            input.ActiveDiseaseName))
+        {
+            return
+                "Nema aktivnog zdravstvenog stanja koje utiče na odluku zalijevanja.";
+        }
+
+        return
+            $"Detektovano stanje \"{input.ActiveDiseaseName}\" " +
+            "nije primijenilo korekciju količine jer zalijevanje trenutno nije preporučeno.";
+    }
+
     private static bool IsPreferredWateringTime(
-    DateTime localNow)
+        DateTime localNow)
     {
         var time =
             localNow.TimeOfDay;
@@ -736,11 +778,15 @@ public class WateringRuleEngine
             new TimeSpan(22, 0, 0);
 
         return
-            (time >= morningStart &&
-             time <= morningEnd)
+            (
+                time >= morningStart &&
+                time <= morningEnd
+            )
             ||
-            (time >= eveningStart &&
-             time <= eveningEnd);
+            (
+                time >= eveningStart &&
+                time <= eveningEnd
+            );
     }
 
     private static bool IsStrongSun(
@@ -760,7 +806,7 @@ public class WateringRuleEngine
     }
 
     private static string GetNextRecommendedWindow(
-    DateTime localNow)
+        DateTime localNow)
     {
         var time =
             localNow.TimeOfDay;
@@ -807,7 +853,10 @@ public class WateringRuleEngine
 
     private static string BuildDecisionReason(
         WateringRuleInput input,
-        WateringDecision decision) => $"soil={input.CurrentSoilMoisture?.ToString("0.#") ?? "n/a"}%; " +
+        WateringDecision decision)
+    {
+        return
+            $"soil={input.CurrentSoilMoisture?.ToString("0.#") ?? "n/a"}%; " +
             $"min={input.MinRecommendedSoilMoisture?.ToString() ?? "n/a"}%; " +
             $"critical={decision.CriticalMoistureThreshold}%; " +
             $"deficit={decision.MoistureDeficit:0.#}pp; " +
@@ -816,9 +865,10 @@ public class WateringRuleEngine
             $"rainExposed={input.IsRainExposed}; " +
             $"rain24h={input.RainAmountNext24hMm:0.#}mm; " +
             $"rainBeforeNextWindow={input.RainAmountBeforeNextWindowMm:0.#}mm; " +
-            $"diseaseModifier={input.DiseaseWateringModifierPercent}%; " +
+            $"diseaseModifier={input.DiseaseWateringModifier:0.00}x; " +
             $"recommended={decision.RecommendedAmountMl}ml; " +
             $"waitingForRain={decision.WaitingForRain}; " +
             $"autoAllowedNow={decision.IsAutomaticWateringAllowedNow}; " +
             $"requiresForce={decision.RequiresForce}";
+    }
 }
