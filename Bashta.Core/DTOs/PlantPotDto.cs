@@ -13,8 +13,9 @@ public class PlantPotRequest
     public bool IsRainExposed { get; set; } = false;
 
     public int SensorReadingIntervalMinutes { get; set; } = 60;
-}
 
+    public bool? IsActive { get; set; }
+}
 public class PlantPotResponse
 {
     public int Id { get; set; }

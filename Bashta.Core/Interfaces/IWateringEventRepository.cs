@@ -18,6 +18,9 @@ public interface IWateringEventRepository
     Task<int> CountManualNonSkippedByPotIdSinceAsync(
         int potId,
         DateTime sinceUtc);
+    Task<List<WateringEvent>> GetRecentCompletedByPotIdAsync(
+        int potId,
+        int limit = 5);
 
     Task<WateringEvent> CreateAsync(
         WateringEvent wateringEvent);

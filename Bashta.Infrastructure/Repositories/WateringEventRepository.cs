@@ -58,4 +58,18 @@ public class WateringEventRepository : IWateringEventRepository
 
         return wateringEvent;
     }
+    public async Task<List<WateringEvent>>
+    GetRecentCompletedByPotIdAsync(
+        int potId,
+        int limit = 5)
+    {
+        return await _context.WateringEvents
+            .AsNoTracking()
+            .Where(w =>
+                w.PotId == potId &&
+                !w.Skipped)
+            .OrderByDescending(w => w.CreatedAt)
+            .Take(limit)
+            .ToListAsync();
+    }
 }

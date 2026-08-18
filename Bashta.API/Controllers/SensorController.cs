@@ -114,7 +114,16 @@ public class SensorController : ControllerBase
                 message = "Saksija nije pronađena."
             });
         }
-
+        if (!pot.IsActive)
+        {
+            return Ok(new
+            {
+                message =
+                    "Senzorsko očitanje je sačuvano, " +
+                    "ali je saksija neaktivna. " +
+                    "Automatska procjena zalijevanja nije pokrenuta."
+            });
+        }
         var weather =
             await _weatherService.GetWeatherAsync();
         var rainUntilNextWindowEnd =

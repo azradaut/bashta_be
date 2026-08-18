@@ -4,11 +4,15 @@ using Bashta.Core.Interfaces;
 using Bashta.Core.Services;
 using Bashta.Infrastructure.External;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace Bashta.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
+
 public class WateringController : ControllerBase
 {
     private const int MaxManualWateringsPer24Hours = 2;
@@ -45,24 +49,61 @@ public class WateringController : ControllerBase
         }
 
     [HttpGet("{potId}")]
-    public async Task<IActionResult> GetHistory(int potId, [FromQuery] int limit = 20)
-    {
-        limit = Math.Clamp(limit, 1, 50);
-
-        var events = await _wateringRepo.GetByPotIdAsync(potId, limit);
-
-        return Ok(events.Select(MapToResponse));
-    }
-
-    [HttpGet("{potId}/status")]
-    public async Task<IActionResult> GetStatus(int potId, [FromQuery] int limit = 10)
+    public async Task<IActionResult> GetHistory(
+    int potId,
+    [FromQuery] int limit = 5)
     {
         limit = Math.Clamp(limit, 1, 20);
 
         var pot = await _potRepo.GetByIdAsync(potId);
 
         if (pot is null)
-            return NotFound(new { message = "Saksija nije pronađena." });
+            return NotFound(new
+            {
+                message = "Saksija nije pronađena."
+            });
+
+        var userId = GetCurrentUserId();
+
+        if (pot.UserId != userId)
+            return Forbid();
+
+        var events =
+            await _wateringRepo.GetByPotIdAsync(
+                potId,
+                limit);
+
+        return Ok(
+            events.Select(MapToResponse));
+    }
+
+    [HttpGet("{potId}/status")]
+    public async Task<IActionResult> GetStatus(
+    int potId,
+    [FromQuery] int limit = 5)
+    {
+        limit = Math.Clamp(limit, 1, 5);
+
+        var pot = await _potRepo.GetByIdAsync(potId);
+
+        if (pot is null)
+            return NotFound(new
+            {
+                message = "Saksija nije pronađena."
+            });
+       /*if (!pot.IsActive)
+        {
+            return BadRequest(new
+            {
+                message =
+                    "Saksija je trenutno neaktivna. " +
+                    "Aktivirajte je prije zalijevanja."
+            });
+        }*/
+        var userId = GetCurrentUserId();
+
+        if (pot.UserId != userId)
+            return Forbid();
 
         var activePlant = await _plantRepo.GetActiveByPotIdAsync(potId);
         Disease? activeDisease = null;
@@ -92,7 +133,11 @@ public class WateringController : ControllerBase
         potId,
         sinceUtc);
 
-        var recentEvents = await _wateringRepo.GetByPotIdAsync(potId, limit);
+        var recentEvents =
+    await _wateringRepo
+        .GetRecentCompletedByPotIdAsync(
+            potId,
+            limit);
 
         var remaining =
      Math.Max(
@@ -186,13 +231,39 @@ public class WateringController : ControllerBase
     remaining,
 
             RecommendedAmountMl = decision.RecommendedAmountMl,
-            CanWater = decision.CanWater,
-            IsWateringRecommended = decision.IsWateringRecommended,
-            RequiresForce = decision.RequiresForce,
-            IsAutomaticWateringAllowedNow = decision.IsAutomaticWateringAllowedNow,
-            NextRecommendedWateringWindow = decision.NextRecommendedWateringWindow,
-            StatusMessage = decision.StatusMessage,
-            WarningMessage = decision.WarningMessage,
+            CanWater =
+    pot.IsActive &&
+    decision.CanWater,
+
+            IsWateringRecommended =
+    pot.IsActive &&
+    decision.IsWateringRecommended,
+
+            RequiresForce =
+    pot.IsActive &&
+    decision.RequiresForce,
+
+            IsAutomaticWateringAllowedNow =
+    pot.IsActive &&
+    decision.IsAutomaticWateringAllowedNow,
+
+            NextRecommendedWateringWindow =
+    pot.IsActive
+        ? decision.NextRecommendedWateringWindow
+        : "Nije dostupno dok je saksija neaktivna.",
+
+            StatusMessage =
+    pot.IsActive
+        ? decision.StatusMessage
+        : "Saksija je trenutno neaktivna.",
+
+            WarningMessage =
+    pot.IsActive
+        ? decision.WarningMessage
+        : "Podaci i historija ostaju dostupni, " +
+          "ali su ručno i automatsko zalijevanje " +
+          "onemogućeni. Saksiju možete ponovo " +
+          "aktivirati kroz Moje saksije → Uredi.",
 
             IsRainExposed = pot.IsRainExposed,
             WeatherAvailable = weather.IsAvailable,
@@ -223,10 +294,33 @@ public class WateringController : ControllerBase
         if (request.PotId <= 0)
             return BadRequest(new { message = "PotId je obavezan." });
 
-        var pot = await _potRepo.GetByIdAsync(request.PotId);
+        var pot =
+    await _potRepo.GetByIdAsync(
+        request.PotId);
+
+        if (pot is null)
+        {
+            return NotFound(new
+            {
+                message = "Saksija nije pronađena."
+            });
+        }
+        if (!pot.IsActive)
+        {
+            return BadRequest(new
+            {
+                message =
+                    "Saksija je trenutno neaktivna. " +
+                    "Aktivirajte je prije zalijevanja."
+            });
+        }
 
         if (pot is null)
             return NotFound(new { message = "Saksija nije pronađena." });
+        var userId = GetCurrentUserId();
+
+        if (pot.UserId != userId)
+            return Forbid();
 
         var activePlant = await _plantRepo.GetActiveByPotIdAsync(request.PotId);
 
@@ -679,5 +773,16 @@ public class WateringController : ControllerBase
             WeatherSummary = wateringEvent.WeatherSummary,
             CreatedAt = wateringEvent.CreatedAt
         };
+    }
+    private int GetCurrentUserId()
+    {
+        var value =
+            User.FindFirstValue(
+                ClaimTypes.NameIdentifier);
+
+        if (!int.TryParse(value, out var userId))
+            throw new UnauthorizedAccessException();
+
+        return userId;
     }
 }

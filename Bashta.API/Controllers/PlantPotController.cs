@@ -61,20 +61,26 @@ public class PlantPotController : ControllerBase
         {
             UserId = userId,
             Name = request.Name.Trim(),
+
             Location = string.IsNullOrWhiteSpace(request.Location)
-                ? null
-                : request.Location.Trim(),
+        ? null
+        : request.Location.Trim(),
+
             MacAddress = string.IsNullOrWhiteSpace(request.MacAddress)
-                ? null
-                : request.MacAddress.Trim(),
+        ? null
+        : request.MacAddress.Trim(),
+
             FirmwareVersion = string.IsNullOrWhiteSpace(request.FirmwareVersion)
-                ? null
-                : request.FirmwareVersion.Trim(),
+        ? null
+        : request.FirmwareVersion.Trim(),
+
+            IsActive = true,
             IsRainExposed = request.IsRainExposed,
+
             SensorReadingIntervalMinutes =
-                request.SensorReadingIntervalMinutes <= 0
-                    ? 60
-                    : request.SensorReadingIntervalMinutes
+        request.SensorReadingIntervalMinutes <= 0
+            ? 60
+            : request.SensorReadingIntervalMinutes
         };
 
         var created = await _potRepo.CreateAsync(pot);
@@ -114,10 +120,18 @@ public class PlantPotController : ControllerBase
             : request.FirmwareVersion.Trim();
 
         pot.IsRainExposed = request.IsRainExposed;
+        if (request.IsActive.HasValue)
+        {
+            pot.IsActive = request.IsActive.Value;
+        }
 
         pot.SensorReadingIntervalMinutes = request.SensorReadingIntervalMinutes <= 0
             ? 60
             : request.SensorReadingIntervalMinutes;
+        if (request.IsActive.HasValue)
+        {
+            pot.IsActive = request.IsActive.Value;
+        }
 
         await _potRepo.UpdateAsync(pot);
 
@@ -128,6 +142,16 @@ public class PlantPotController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
+        var pot = await _potRepo.GetByIdAsync(id);
+
+        if (pot is null)
+            return NotFound();
+
+        var userId = GetCurrentUserId();
+
+        if (pot.UserId != userId)
+            return Forbid();
+
         await _potRepo.DeleteAsync(id);
 
         return NoContent();
