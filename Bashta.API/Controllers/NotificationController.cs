@@ -83,4 +83,13 @@ public class NotificationController : ControllerBase
 
         return userId;
     }
+
+    [HttpDelete("my/read")]
+    public async Task<IActionResult> DeleteRead()
+    {
+        var userId = GetCurrentUserId();
+        var deleted = await _notificationRepo.DeleteReadByUserIdAsync(userId);
+
+        return Ok(new { deleted });
+    }
 }

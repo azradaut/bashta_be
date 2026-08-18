@@ -59,4 +59,16 @@ public class NotificationRepository : INotificationRepository
 
         return true;
     }
+    public async Task<int> DeleteReadByUserIdAsync(int userId)
+    {
+        var notifications = await _context.Notifications.Where(n => n.UserId == userId && n.IsRead).ToListAsync();
+
+        if (notifications.Count == 0)
+            return 0;
+
+        _context.Notifications.RemoveRange(notifications);
+        await _context.SaveChangesAsync();
+
+        return notifications.Count;
+    }
 }
