@@ -1,28 +1,38 @@
-﻿using Bashta.Core.DTOs;
+﻿using System.Security.Claims;
+using Bashta.Core.DTOs;
 using Bashta.Core.Entities;
 using Bashta.Core.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Bashta.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class PlantController : ControllerBase
 {
     private readonly IPlantRepository _plantRepo;
     private readonly IPlantTypeRepository _plantTypeRepo;
+    private readonly IPlantPotRepository _potRepo;
 
-    public PlantController(IPlantRepository plantRepo, IPlantTypeRepository plantTypeRepo)
+    public PlantController(IPlantRepository plantRepo, IPlantTypeRepository plantTypeRepo, IPlantPotRepository potRepo)
     {
         _plantRepo = plantRepo;
         _plantTypeRepo = plantTypeRepo;
+        _potRepo = potRepo;
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
         var plant = await _plantRepo.GetByIdAsync(id);
-        if (plant is null) return NotFound();
+
+        if (plant is null)
+            return NotFound();
+
+        if (plant.PlantPot.UserId != GetCurrentUserId())
+            return Forbid();
 
         return Ok(MapToResponse(plant));
     }
@@ -30,8 +40,18 @@ public class PlantController : ControllerBase
     [HttpGet("active/{potId}")]
     public async Task<IActionResult> GetActiveByPot(int potId)
     {
+        var pot = await _potRepo.GetByIdAsync(potId);
+
+        if (pot is null)
+            return NotFound();
+
+        if (pot.UserId != GetCurrentUserId())
+            return Forbid();
+
         var plant = await _plantRepo.GetActiveByPotIdAsync(potId);
-        if (plant is null) return NotFound();
+
+        if (plant is null)
+            return NotFound();
 
         return Ok(MapToResponse(plant));
     }
@@ -40,6 +60,7 @@ public class PlantController : ControllerBase
     public async Task<IActionResult> GetPlantTypes()
     {
         var types = await _plantTypeRepo.GetAllAsync();
+
         return Ok(types.Select(t => new PlantTypeDetail
         {
             Id = t.Id,
@@ -56,6 +77,14 @@ public class PlantController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] PlantRequest request)
     {
+        var pot = await _potRepo.GetByIdAsync(request.PotId);
+
+        if (pot is null)
+            return NotFound(new { message = "Saksija nije pronađena." });
+
+        if (pot.UserId != GetCurrentUserId())
+            return Forbid();
+
         var plant = new Plant
         {
             PotId = request.PotId,
@@ -66,6 +95,7 @@ public class PlantController : ControllerBase
         };
 
         var created = await _plantRepo.CreateAsync(plant);
+
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created.Id);
     }
 
@@ -73,10 +103,17 @@ public class PlantController : ControllerBase
     public async Task<IActionResult> RemovePlant(int id)
     {
         var plant = await _plantRepo.GetByIdAsync(id);
-        if (plant is null) return NotFound();
+
+        if (plant is null)
+            return NotFound();
+
+        if (plant.PlantPot.UserId != GetCurrentUserId())
+            return Forbid();
 
         plant.RemovedAt = DateOnly.FromDateTime(DateTime.UtcNow);
+
         await _plantRepo.UpdateAsync(plant);
+
         return NoContent();
     }
 
@@ -87,6 +124,9 @@ public class PlantController : ControllerBase
 
         if (plant is null)
             return NotFound();
+
+        if (plant.PlantPot.UserId != GetCurrentUserId())
+            return Forbid();
 
         if (image is null || image.Length == 0)
             return BadRequest("Slika nije poslana.");
@@ -134,6 +174,9 @@ public class PlantController : ControllerBase
         if (plant is null)
             return NotFound();
 
+        if (plant.PlantPot.UserId != GetCurrentUserId())
+            return Forbid();
+
         DeleteFileIfExists(plant.ImagePath);
 
         plant.ImagePath = null;
@@ -141,6 +184,16 @@ public class PlantController : ControllerBase
         await _plantRepo.UpdateAsync(plant);
 
         return NoContent();
+    }
+
+    private int GetCurrentUserId()
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!int.TryParse(value, out var userId))
+            throw new UnauthorizedAccessException();
+
+        return userId;
     }
 
     private static PlantResponse MapToResponse(Plant plant) => new()
@@ -177,8 +230,6 @@ public class PlantController : ControllerBase
             normalizedPath.Replace('/', Path.DirectorySeparatorChar));
 
         if (System.IO.File.Exists(fullPath))
-        {
             System.IO.File.Delete(fullPath);
-        }
     }
 }

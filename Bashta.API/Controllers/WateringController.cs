@@ -6,13 +6,14 @@ using Bashta.Infrastructure.External;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Bashta.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-
 public class WateringController : ControllerBase
 {
     private const int MaxManualWateringsPer24Hours = 2;
@@ -49,32 +50,21 @@ public class WateringController : ControllerBase
         }
 
     [HttpGet("{potId}")]
-    public async Task<IActionResult> GetHistory(
-    int potId,
-    [FromQuery] int limit = 5)
+    public async Task<IActionResult> GetHistory(int potId, [FromQuery] int limit = 20)
     {
-        limit = Math.Clamp(limit, 1, 20);
+        limit = Math.Clamp(limit, 1, 50);
 
         var pot = await _potRepo.GetByIdAsync(potId);
 
         if (pot is null)
-            return NotFound(new
-            {
-                message = "Saksija nije pronađena."
-            });
+            return NotFound(new { message = "Saksija nije pronađena." });
 
-        var userId = GetCurrentUserId();
-
-        if (pot.UserId != userId)
+        if (pot.UserId != GetCurrentUserId())
             return Forbid();
 
-        var events =
-            await _wateringRepo.GetByPotIdAsync(
-                potId,
-                limit);
+        var events = await _wateringRepo.GetByPotIdAsync(potId, limit);
 
-        return Ok(
-            events.Select(MapToResponse));
+        return Ok(events.Select(MapToResponse));
     }
 
     [HttpGet("{potId}/status")]
@@ -319,7 +309,7 @@ public class WateringController : ControllerBase
             return NotFound(new { message = "Saksija nije pronađena." });
         var userId = GetCurrentUserId();
 
-        if (pot.UserId != userId)
+        if (pot.UserId != GetCurrentUserId())
             return Forbid();
 
         var activePlant = await _plantRepo.GetActiveByPotIdAsync(request.PotId);
@@ -776,9 +766,7 @@ public class WateringController : ControllerBase
     }
     private int GetCurrentUserId()
     {
-        var value =
-            User.FindFirstValue(
-                ClaimTypes.NameIdentifier);
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
         if (!int.TryParse(value, out var userId))
             throw new UnauthorizedAccessException();

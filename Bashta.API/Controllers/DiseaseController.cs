@@ -1,14 +1,17 @@
-﻿using Bashta.API.Requests;
+﻿using System.Security.Claims;
+using Bashta.API.Requests;
 using Bashta.Core.DTOs;
 using Bashta.Core.Entities;
 using Bashta.Core.Interfaces;
 using Bashta.ML.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Bashta.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class DiseaseController : ControllerBase
 {
     private readonly IDiseaseDetectionRepository _detectionRepo;
@@ -45,8 +48,10 @@ public class DiseaseController : ControllerBase
         if (plant is null)
             return NotFound($"Biljka sa ID {request.PlantId} nije pronađena.");
 
-        var extension = Path.GetExtension(request.Image.FileName).ToLowerInvariant();
+        if (plant.PlantPot.UserId != GetCurrentUserId())
+            return Forbid();
 
+        var extension = Path.GetExtension(request.Image.FileName).ToLowerInvariant();
         var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
 
         if (!allowedExtensions.Contains(extension))
@@ -55,21 +60,12 @@ public class DiseaseController : ControllerBase
         var webRootPath = _environment.WebRootPath;
 
         if (string.IsNullOrWhiteSpace(webRootPath))
-        {
             webRootPath = Path.Combine(_environment.ContentRootPath, "wwwroot");
-        }
 
-        var uploadsDirectory = Path.Combine(
-            webRootPath,
-            "uploads",
-            "disease-detections"
-        );
-
+        var uploadsDirectory = Path.Combine(webRootPath, "uploads", "disease-detections");
         Directory.CreateDirectory(uploadsDirectory);
 
-        var fileName =
-            $"{request.PlantId}_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}{extension}";
-
+        var fileName = $"{request.PlantId}_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}{extension}";
         var absoluteImagePath = Path.Combine(uploadsDirectory, fileName);
 
         await using (var fileStream = System.IO.File.Create(absoluteImagePath))
@@ -81,18 +77,13 @@ public class DiseaseController : ControllerBase
 
         await using (var imageStream = System.IO.File.OpenRead(absoluteImagePath))
         {
-            prediction = await _tomatoPredictionService.PredictAsync(
-                imageStream,
-                cancellationToken
-            );
+            prediction = await _tomatoPredictionService.PredictAsync(imageStream, cancellationToken);
         }
 
         Disease? disease = null;
 
         if (!prediction.IsHealthy)
-        {
             disease = await _diseaseRepo.GetByNameAsync(prediction.DiseaseName);
-        }
 
         var relativeImagePath = $"/uploads/disease-detections/{fileName}";
 
@@ -123,10 +114,16 @@ public class DiseaseController : ControllerBase
     }
 
     [HttpGet("history/{plantId}")]
-    public async Task<ActionResult<IEnumerable<DiseaseDetectionResponse>>> GetHistory(
-        int plantId,
-        [FromQuery] int limit = 10)
+    public async Task<ActionResult<IEnumerable<DiseaseDetectionResponse>>> GetHistory(int plantId, [FromQuery] int limit = 10)
     {
+        var plant = await _plantRepo.GetByIdAsync(plantId);
+
+        if (plant is null)
+            return NotFound();
+
+        if (plant.PlantPot.UserId != GetCurrentUserId())
+            return Forbid();
+
         var detections = await _detectionRepo.GetByPlantIdAsync(plantId, limit);
 
         return Ok(detections.Select(d => new DiseaseDetectionResponse
@@ -146,6 +143,14 @@ public class DiseaseController : ControllerBase
     [HttpGet("latest/{plantId}")]
     public async Task<ActionResult<DiseaseDetectionResponse>> GetLatest(int plantId)
     {
+        var plant = await _plantRepo.GetByIdAsync(plantId);
+
+        if (plant is null)
+            return NotFound();
+
+        if (plant.PlantPot.UserId != GetCurrentUserId())
+            return Forbid();
+
         var detection = await _detectionRepo.GetLatestByPlantIdAsync(plantId);
 
         if (detection is null)
@@ -169,7 +174,16 @@ public class DiseaseController : ControllerBase
     public async Task<IActionResult> GetCatalog()
     {
         var diseases = await _diseaseRepo.GetAllAsync();
-
         return Ok(diseases);
+    }
+
+    private int GetCurrentUserId()
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!int.TryParse(value, out var userId))
+            throw new UnauthorizedAccessException();
+
+        return userId;
     }
 }

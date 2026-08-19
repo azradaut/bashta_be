@@ -14,6 +14,12 @@ public class RecommendationRepository : IRecommendationRepository
         _context = context;
     }
 
+    public async Task<Recommendation?> GetByIdAsync(int id) =>
+        await _context.Recommendations
+            .Include(r => r.Plant)
+                .ThenInclude(p => p.PlantPot)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
     public async Task<IEnumerable<Recommendation>> GetByPlantIdAsync(int plantId, bool unreadOnly = false) =>
         await _context.Recommendations
             .Where(r => r.PlantId == plantId && (!unreadOnly || !r.IsRead))
@@ -29,11 +35,12 @@ public class RecommendationRepository : IRecommendationRepository
 
     public async Task MarkAsReadAsync(int id)
     {
-        var rec = await _context.Recommendations.FindAsync(id);
-        if (rec is not null)
-        {
-            rec.IsRead = true;
-            await _context.SaveChangesAsync();
-        }
+        var recommendation = await _context.Recommendations.FindAsync(id);
+
+        if (recommendation is null)
+            return;
+
+        recommendation.IsRead = true;
+        await _context.SaveChangesAsync();
     }
 }

@@ -5,11 +5,14 @@ using Bashta.Core.Services;
 using Bashta.Infrastructure.External;
 using Microsoft.AspNetCore.Mvc;
 using System.Timers;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Bashta.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class SensorController : ControllerBase
 {
     private readonly ISensorReadingRepository _sensorRepo;
@@ -56,8 +59,18 @@ public class SensorController : ControllerBase
     [HttpGet("{potId}/latest")]
     public async Task<IActionResult> GetLatest(int potId)
     {
+        var pot = await _potRepo.GetByIdAsync(potId);
+
+        if (pot is null)
+            return NotFound();
+
+        if (pot.UserId != GetCurrentUserId())
+            return Forbid();
+
         var reading = await _sensorRepo.GetLatestByPotIdAsync(potId);
-        if (reading is null) return NotFound();
+
+        if (reading is null)
+            return NotFound();
 
         return Ok(new SensorReadingResponse
         {
@@ -73,7 +86,16 @@ public class SensorController : ControllerBase
     [HttpGet("{potId}/history")]
     public async Task<IActionResult> GetHistory(int potId, [FromQuery] DateTime from, [FromQuery] DateTime to)
     {
+        var pot = await _potRepo.GetByIdAsync(potId);
+
+        if (pot is null)
+            return NotFound();
+
+        if (pot.UserId != GetCurrentUserId())
+            return Forbid();
+
         var readings = await _sensorRepo.GetByPotIdAsync(potId, from, to);
+
         return Ok(readings.Select(r => new SensorReadingResponse
         {
             Time = r.Time,
@@ -86,6 +108,7 @@ public class SensorController : ControllerBase
     }
 
     [HttpPost("ingest")]
+    [AllowAnonymous]
     public async Task<IActionResult> Ingest([FromBody] SensorReadingRequest request)
     {
         // 1. Sačuvaj očitavanje
@@ -327,8 +350,17 @@ public class SensorController : ControllerBase
         rainAmount > 0,
         rainAmount);
 }
+    private int GetCurrentUserId()
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-private static DateTime GetNextWateringDecisionHorizon(
+        if (!int.TryParse(value, out var userId))
+            throw new UnauthorizedAccessException();
+
+        return userId;
+    }
+
+    private static DateTime GetNextWateringDecisionHorizon(
     DateTime localNow)
     {
         var time =
@@ -347,7 +379,7 @@ private static DateTime GetNextWateringDecisionHorizon(
             new TimeSpan(22, 0, 0);
 
         // Prije jutarnjeg termina:
-        // gledamo prognozu do 08:00.
+    
         if (time < morningStart)
         {
             return localNow.Date
