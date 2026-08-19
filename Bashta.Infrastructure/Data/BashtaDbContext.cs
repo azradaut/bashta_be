@@ -176,6 +176,7 @@ public class BashtaDbContext : DbContext
             e.Property(x => x.Temperature).HasColumnName("temperature");
             e.Property(x => x.Humidity).HasColumnName("humidity");
             e.Property(x => x.Lux).HasColumnName("lux");
+            e.Property(x => x.WaterLevel).HasColumnName("water_level");
 
             e.HasOne(x => x.PlantPot)
              .WithMany(x => x.SensorReadings)

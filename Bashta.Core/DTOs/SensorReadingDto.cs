@@ -7,6 +7,7 @@ public class SensorReadingRequest
     public decimal? Temperature { get; set; }
     public decimal? Humidity { get; set; }
     public int? Lux { get; set; }
+    public decimal? WaterLevel { get; set; }
 }
 
 public class SensorReadingResponse
@@ -17,6 +18,7 @@ public class SensorReadingResponse
     public decimal? Temperature { get; set; }
     public decimal? Humidity { get; set; }
     public int? Lux { get; set; }
+    public decimal? WaterLevel { get; set; }
 }
 
 public class SensorHistoryRequest

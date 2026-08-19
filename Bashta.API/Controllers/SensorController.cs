@@ -3,10 +3,9 @@ using Bashta.Core.Entities;
 using Bashta.Core.Interfaces;
 using Bashta.Core.Services;
 using Bashta.Infrastructure.External;
-using Microsoft.AspNetCore.Mvc;
-using System.Timers;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Bashta.API.Controllers;
 
@@ -15,6 +14,8 @@ namespace Bashta.API.Controllers;
 [Authorize]
 public class SensorController : ControllerBase
 {
+    private const decimal LowWaterLevelThreshold = 15m;
+
     private readonly ISensorReadingRepository _sensorRepo;
     private readonly IPlantRepository _plantRepo;
     private readonly IWateringEventRepository _wateringRepo;
@@ -41,20 +42,20 @@ public class SensorController : ControllerBase
         DLIService dliService,
         RecommendationService recommendationService,
         WeatherService weatherService)
-        {
-            _sensorRepo = sensorRepo;
-            _plantRepo = plantRepo;
-            _potRepo = potRepo;
-            _wateringRepo = wateringRepo;
-            _diseaseDetectionRepo = diseaseDetectionRepo;
-            _diseaseRepo = diseaseRepo;
-            _recommendationRepo = recommendationRepo;
-            _notificationRepo = notificationRepo;
-            _ruleEngine = ruleEngine;
-            _dliService = dliService;
-            _recommendationService = recommendationService;
-            _weatherService = weatherService;
-        }
+    {
+        _sensorRepo = sensorRepo;
+        _plantRepo = plantRepo;
+        _potRepo = potRepo;
+        _wateringRepo = wateringRepo;
+        _diseaseDetectionRepo = diseaseDetectionRepo;
+        _diseaseRepo = diseaseRepo;
+        _recommendationRepo = recommendationRepo;
+        _notificationRepo = notificationRepo;
+        _ruleEngine = ruleEngine;
+        _dliService = dliService;
+        _recommendationService = recommendationService;
+        _weatherService = weatherService;
+    }
 
     [HttpGet("{potId}/latest")]
     public async Task<IActionResult> GetLatest(int potId)
@@ -79,12 +80,16 @@ public class SensorController : ControllerBase
             SoilMoisture = reading.SoilMoisture,
             Temperature = reading.Temperature,
             Humidity = reading.Humidity,
-            Lux = reading.Lux
+            Lux = reading.Lux,
+            WaterLevel = reading.WaterLevel
         });
     }
 
     [HttpGet("{potId}/history")]
-    public async Task<IActionResult> GetHistory(int potId, [FromQuery] DateTime from, [FromQuery] DateTime to)
+    public async Task<IActionResult> GetHistory(
+        int potId,
+        [FromQuery] DateTime from,
+        [FromQuery] DateTime to)
     {
         var pot = await _potRepo.GetByIdAsync(potId);
 
@@ -94,7 +99,11 @@ public class SensorController : ControllerBase
         if (pot.UserId != GetCurrentUserId())
             return Forbid();
 
-        var readings = await _sensorRepo.GetByPotIdAsync(potId, from, to);
+        var readings =
+            await _sensorRepo.GetByPotIdAsync(
+                potId,
+                from,
+                to);
 
         return Ok(readings.Select(r => new SensorReadingResponse
         {
@@ -103,32 +112,20 @@ public class SensorController : ControllerBase
             SoilMoisture = r.SoilMoisture,
             Temperature = r.Temperature,
             Humidity = r.Humidity,
-            Lux = r.Lux
+            Lux = r.Lux,
+            WaterLevel = r.WaterLevel
         }));
     }
 
     [HttpPost("ingest")]
     [AllowAnonymous]
-    public async Task<IActionResult> Ingest([FromBody] SensorReadingRequest request)
+    public async Task<IActionResult> Ingest(
+        [FromBody] SensorReadingRequest request)
     {
-        // 1. Sačuvaj očitavanje
-        var reading = new SensorReading
-        {
-            Time = DateTime.UtcNow,
-            PotId = request.PotId,
-            SoilMoisture = request.SoilMoisture,
-            Temperature = request.Temperature,
-            Humidity = request.Humidity,
-            Lux = request.Lux
-        };
-        await _sensorRepo.AddAsync(reading);
-
-        // 2. Dohvati aktivnu biljku
-        var plant = await _plantRepo.GetActiveByPotIdAsync(request.PotId);
-        if (plant is null) return Ok(new { message = "Nema aktivne biljke u saksiji." });
-
+        // 1. Provjeri da saksija postoji
         var pot =
-    await _potRepo.GetByIdAsync(request.PotId);
+            await _potRepo.GetByIdAsync(
+                request.PotId);
 
         if (pot is null)
         {
@@ -137,146 +134,274 @@ public class SensorController : ControllerBase
                 message = "Saksija nije pronađena."
             });
         }
+
+        // 2. Prethodno očitanje uzimamo prije upisa novog.
+        // Koristi se za detekciju prelaska nivoa vode
+        // iz normalnog u nizak.
+        var previousReading =
+            await _sensorRepo.GetLatestByPotIdAsync(
+                request.PotId);
+
+        // 3. Sačuvaj novo senzorsko očitanje
+        var reading = new SensorReading
+        {
+            Time = DateTime.UtcNow,
+            PotId = request.PotId,
+            SoilMoisture = request.SoilMoisture,
+            Temperature = request.Temperature,
+            Humidity = request.Humidity,
+            Lux = request.Lux,
+            WaterLevel = request.WaterLevel
+        };
+
+        await _sensorRepo.AddAsync(reading);
+
+        // 4. Ako je saksija neaktivna, reading ostaje sačuvan,
+        // ali se ne pokreću obavijesti ni watering logika.
         if (!pot.IsActive)
         {
             return Ok(new
             {
                 message =
-                    "Senzorsko očitanje je sačuvano, " +
+                    "Senzorsko očitavanje je sačuvano, " +
                     "ali je saksija neaktivna. " +
                     "Automatska procjena zalijevanja nije pokrenuta."
             });
         }
+
+        // 5. Provjera nivoa vode
+        var reservoirLow =
+            request.WaterLevel.HasValue &&
+            request.WaterLevel.Value <= LowWaterLevelThreshold;
+
+        var wasPreviouslyLow =
+            previousReading?.WaterLevel.HasValue == true &&
+            previousReading.WaterLevel.Value <= LowWaterLevelThreshold;
+
+        // Notification se kreira samo prilikom prelaska
+        // iz normalnog nivoa u nizak nivo.
+        if (reservoirLow && !wasPreviouslyLow)
+        {
+            await _notificationRepo.CreateAsync(
+                new Notification
+                {
+                    UserId = pot.UserId,
+                    Title = "Nizak nivo vode",
+                    Body =
+                        $"Nivo vode u rezervoaru saksije \"{pot.Name}\" " +
+                        $"je {request.WaterLevel:0.#}%. " +
+                        "Dopunite rezervoar prije narednog zalijevanja.",
+                    Type = "alert",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+        }
+
+        // 6. Dohvati aktivnu biljku
+        var plant =
+            await _plantRepo.GetActiveByPotIdAsync(
+                request.PotId);
+
+        if (plant is null)
+        {
+            return Ok(new
+            {
+                message =
+                    "Očitavanje je sačuvano, ali nema aktivne biljke u saksiji."
+            });
+        }
+
+        // 7. Vremenski podaci
         var weather =
             await _weatherService.GetWeatherAsync();
+
         var rainUntilNextWindowEnd =
-    CalculateRainUntilNextWateringWindowEnd(
-        weather,
-        DateTime.Now);
+            CalculateRainUntilNextWateringWindowEnd(
+                weather,
+                DateTime.Now);
 
-        // 3. Provjeri bolest — uzmi zadnju detekciju
-        var lastDetection = await _diseaseDetectionRepo.GetLatestByPlantIdAsync(plant.Id);
+        // 8. Posljednja detekcija bolesti
+        var lastDetection =
+            await _diseaseDetectionRepo
+                .GetLatestByPlantIdAsync(
+                    plant.Id);
+
         Disease? activeDisease = null;
-        if (lastDetection is not null && !lastDetection.IsHealthy && lastDetection.DiseaseId.HasValue)
-            activeDisease = await _diseaseRepo.GetByIdAsync(lastDetection.DiseaseId.Value);
 
-
-
-        var decision =
-    _ruleEngine.Evaluate(
-        new WateringRuleInput
+        if (lastDetection is not null &&
+            !lastDetection.IsHealthy &&
+            lastDetection.DiseaseId.HasValue)
         {
-            PlantId = plant.Id,
+            activeDisease =
+                await _diseaseRepo.GetByIdAsync(
+                    lastDetection.DiseaseId.Value);
+        }
 
-            CurrentSoilMoisture =
-                request.SoilMoisture,
+        // 9. WateringRuleEngine donosi odluku
+        // na osnovu stanja biljke, senzora i vremena.
+        var decision =
+            _ruleEngine.Evaluate(
+                new WateringRuleInput
+                {
+                    PlantId = plant.Id,
 
-            MinRecommendedSoilMoisture =
-                plant.PlantType.MinSoilMoisture,
+                    CurrentSoilMoisture =
+                        request.SoilMoisture,
 
-            MaxRecommendedSoilMoisture =
-                plant.PlantType.MaxSoilMoisture,
+                    MinRecommendedSoilMoisture =
+                        plant.PlantType.MinSoilMoisture,
 
-            // Ako je weather dostupan,
-            // koristimo vanjsku temperaturu.
-            // Inače fallback na senzor.
-            CurrentTemperature =
-                weather.IsAvailable
-                    ? weather.CurrentTemp
-                    : request.Temperature,
+                    MaxRecommendedSoilMoisture =
+                        plant.PlantType.MaxSoilMoisture,
 
-            MaxTemperatureNext24h =
-                weather.IsAvailable
-                    ? weather.MaxTempNext24h
-                    : request.Temperature,
+                    CurrentTemperature =
+                        weather.IsAvailable
+                            ? weather.CurrentTemp
+                            : request.Temperature,
 
-            CurrentLux =
-                request.Lux,
+                    MaxTemperatureNext24h =
+                        weather.IsAvailable
+                            ? weather.MaxTempNext24h
+                            : request.Temperature,
 
-            IsRainExposed =
-                pot.IsRainExposed,
+                    CurrentLux =
+                        request.Lux,
 
-            WeatherAvailable =
-                weather.IsAvailable,
+                    IsRainExposed =
+                        pot.IsRainExposed,
 
-            RainExpectedIn24h =
-                weather.RainExpectedIn24h,
+                    WeatherAvailable =
+                        weather.IsAvailable,
 
-            RainAmountNext24hMm =
-                weather.RainAmountNext24hMm,
+                    RainExpectedIn24h =
+                        weather.RainExpectedIn24h,
 
-            RainExpectedBeforeNextWindow =
-    rainUntilNextWindowEnd.RainExpected,
+                    RainAmountNext24hMm =
+                        weather.RainAmountNext24hMm,
 
-            RainAmountBeforeNextWindowMm =
-    rainUntilNextWindowEnd.RainAmountMm,
+                    RainExpectedBeforeNextWindow =
+                        rainUntilNextWindowEnd.RainExpected,
 
-            RainIntensity =
-                weather.RainIntensity,
+                    RainAmountBeforeNextWindowMm =
+                        rainUntilNextWindowEnd.RainAmountMm,
 
-            HeatRiskNext24h =
-                weather.IsAvailable
-                    ? weather.HeatRiskNext24h
-                    : request.Temperature is >= 30,
+                    RainIntensity =
+                        weather.RainIntensity,
 
-            DiseaseWateringModifier =
-    activeDisease?.WateringModifier
-    ?? 1.00m,
+                    HeatRiskNext24h =
+                        weather.IsAvailable
+                            ? weather.HeatRiskNext24h
+                            : request.Temperature is >= 30,
 
-            ActiveDiseaseName =
-    activeDisease?.NameLocal
-    ?? activeDisease?.Name,
-            LocalNow =
-                DateTime.Now
-        });
+                    DiseaseWateringModifier =
+                        activeDisease?.WateringModifier
+                        ?? 1.00m,
 
+                    ActiveDiseaseName =
+                        activeDisease?.NameLocal
+                        ?? activeDisease?.Name,
+
+                    LocalNow =
+                        DateTime.Now
+                });
+
+        // 10. Operativna zaštita rezervoara.
+        //
+        // Engine može zaključiti da biljci treba voda,
+        // ali ako je rezervoar na 15% ili manje,
+        // fizičko automatsko zalijevanje nije dozvoljeno.
+        if (reservoirLow &&
+            decision.IsWateringRecommended)
+        {
+            decision.CanWater = false;
+            decision.IsAutomaticWateringAllowedNow = false;
+
+            decision.WarningMessage =
+                $"Automatsko zalijevanje nije izvršeno jer je " +
+                $"nivo vode u rezervoaru {request.WaterLevel:0.#}%. " +
+                $"Za zalijevanje je potreban nivo vode iznad " +
+                $"{LowWaterLevelThreshold:0.#}%.";
+
+            decision.DecisionReason +=
+                $"; waterLevel={request.WaterLevel:0.#}%" +
+                "; reservoirLow=True" +
+                "; autoAllowedNow=False";
+        }
+
+        // 11. Evidencija watering odluke
         if (decision.IsAutomaticWateringAllowedNow)
         {
-            await _wateringRepo.CreateAsync(new WateringEvent
-            {
-                PotId = request.PotId,
-                TriggeredBy = "auto",
-                DurationSec = 10,
-                AmountMl = decision.RecommendedAmountMl,
-                SoilMoistureBefore = request.SoilMoisture is null
-                    ? null
-                    : (int?)Math.Round(request.SoilMoisture.Value),
-                SoilMoistureAfter = null,
-                Skipped = false,
-                SkipReason = null,
-                IsForced = false,
-                DecisionReason = decision.DecisionReason,
-                WeatherSummary = BuildWeatherSummary(weather),
-                CreatedAt = DateTime.UtcNow
-            });
+            await _wateringRepo.CreateAsync(
+                new WateringEvent
+                {
+                    PotId = request.PotId,
+                    TriggeredBy = "auto",
+                    DurationSec = 10,
+                    AmountMl =
+                        decision.RecommendedAmountMl,
 
-            await _recommendationService.CreateWateringRecommendationAsync(
-                plant.Id,
-                plant.PlantPot.UserId,
-                decision.StatusMessage);
+                    SoilMoistureBefore =
+                        request.SoilMoisture is null
+                            ? null
+                            : (int?)Math.Round(
+                                request.SoilMoisture.Value),
+
+                    SoilMoistureAfter = null,
+                    Skipped = false,
+                    SkipReason = null,
+                    IsForced = false,
+
+                    DecisionReason =
+                        decision.DecisionReason,
+
+                    WeatherSummary =
+                        BuildWeatherSummary(weather),
+
+                    CreatedAt =
+                        DateTime.UtcNow
+                });
+
+            await _recommendationService
+                .CreateWateringRecommendationAsync(
+                    plant.Id,
+                    pot.UserId,
+                    decision.StatusMessage);
         }
         else
         {
-            await _wateringRepo.CreateAsync(new WateringEvent
-            {
-                PotId = request.PotId,
-                TriggeredBy = "auto",
-                DurationSec = null,
-                AmountMl = 0,
-                SoilMoistureBefore = request.SoilMoisture is null
-                    ? null
-                    : (int?)Math.Round(request.SoilMoisture.Value),
-                SoilMoistureAfter = null,
-                Skipped = true,
-                SkipReason =
-    decision.WarningMessage
-    ?? decision.WeatherImpactMessage
-    ?? decision.StatusMessage,
-                IsForced = false,
-                DecisionReason = decision.DecisionReason,
-                WeatherSummary = BuildWeatherSummary(weather),
-                CreatedAt = DateTime.UtcNow
-            });
+            await _wateringRepo.CreateAsync(
+                new WateringEvent
+                {
+                    PotId = request.PotId,
+                    TriggeredBy = "auto",
+                    DurationSec = null,
+                    AmountMl = 0,
+
+                    SoilMoistureBefore =
+                        request.SoilMoisture is null
+                            ? null
+                            : (int?)Math.Round(
+                                request.SoilMoisture.Value),
+
+                    SoilMoistureAfter = null,
+                    Skipped = true,
+
+                    SkipReason =
+                        decision.WarningMessage
+                        ?? decision.WeatherImpactMessage
+                        ?? decision.StatusMessage,
+
+                    IsForced = false,
+
+                    DecisionReason =
+                        decision.DecisionReason,
+
+                    WeatherSummary =
+                        BuildWeatherSummary(weather),
+
+                    CreatedAt =
+                        DateTime.UtcNow
+                });
         }
 
         return Ok(new
@@ -285,8 +410,9 @@ public class SensorController : ControllerBase
             wateringDecision = decision
         });
     }
+
     private static string BuildWeatherSummary(
-    WeatherResponse weather)
+        WeatherResponse weather)
     {
         if (!weather.IsAvailable)
         {
@@ -313,13 +439,13 @@ public class SensorController : ControllerBase
             $"Trenutno: {weather.CurrentTemp:0.#} °C. " +
             $"{rainText} {heatText}";
     }
+
     private static (
-    
-    bool RainExpected,
-    decimal RainAmountMm)
-    CalculateRainUntilNextWateringWindowEnd(
-        WeatherResponse weather,
-        DateTime localNow)
+        bool RainExpected,
+        decimal RainAmountMm)
+        CalculateRainUntilNextWateringWindowEnd(
+            WeatherResponse weather,
+            DateTime localNow)
     {
         if (!weather.IsAvailable ||
             weather.ForecastItems.Count == 0)
@@ -335,33 +461,41 @@ public class SensorController : ControllerBase
             decisionHorizon.ToUniversalTime();
 
         var rainAmount =
-        weather.ForecastItems
-            .Where(f =>
-                f.ForecastTimeUtc > DateTime.UtcNow &&
-                f.ForecastTimeUtc <= decisionHorizonUtc)
-            .Sum(f => f.RainMm);
+            weather.ForecastItems
+                .Where(f =>
+                    f.ForecastTimeUtc > DateTime.UtcNow &&
+                    f.ForecastTimeUtc <= decisionHorizonUtc)
+                .Sum(f => f.RainMm);
 
-    rainAmount =
-        Math.Round(
-            rainAmount,
-            1);
+        rainAmount =
+            Math.Round(
+                rainAmount,
+                1);
 
-    return (
-        rainAmount > 0,
-        rainAmount);
-}
+        return (
+            rainAmount > 0,
+            rainAmount);
+    }
+
     private int GetCurrentUserId()
     {
-        var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var value =
+            User.FindFirstValue(
+                ClaimTypes.NameIdentifier);
 
-        if (!int.TryParse(value, out var userId))
+        if (!int.TryParse(
+                value,
+                out var userId))
+        {
             throw new UnauthorizedAccessException();
+        }
 
         return userId;
     }
 
-    private static DateTime GetNextWateringDecisionHorizon(
-    DateTime localNow)
+    private static DateTime
+        GetNextWateringDecisionHorizon(
+            DateTime localNow)
     {
         var time =
             localNow.TimeOfDay;
@@ -378,42 +512,32 @@ public class SensorController : ControllerBase
         var eveningEnd =
             new TimeSpan(22, 0, 0);
 
-        // Prije jutarnjeg termina:
-    
         if (time < morningStart)
         {
             return localNow.Date
-            .AddHours(8);
-    }
+                .AddHours(8);
+        }
 
-    // Tokom jutarnjeg termina:
-    // gledamo do njegovog kraja.
-    if (time <= morningEnd)
-    {
+        if (time <= morningEnd)
+        {
+            return localNow.Date
+                .AddHours(8);
+        }
+
+        if (time < eveningStart)
+        {
+            return localNow.Date
+                .AddHours(22);
+        }
+
+        if (time <= eveningEnd)
+        {
+            return localNow.Date
+                .AddHours(22);
+        }
+
         return localNow.Date
+            .AddDays(1)
             .AddHours(8);
     }
-
-    // Između jutarnjeg i večernjeg termina:
-    // gledamo do 22:00.
-    if (time < eveningStart)
-{
-    return localNow.Date
-        .AddHours(22);
-}
-
-// Tokom večernjeg termina:
-// gledamo do njegovog kraja.
-if (time <= eveningEnd)
-{
-    return localNow.Date
-        .AddHours(22);
-}
-
-// Poslije večernjeg termina:
-// gledamo do kraja sutrašnjeg jutarnjeg termina.
-return localNow.Date
-    .AddDays(1)
-    .AddHours(8);
-}
 }
