@@ -9,7 +9,9 @@ namespace Bashta.DataSeeder;
 internal static class Program
 {
     private const int UserId = 1;
-    private const int Pot1Id = 1;
+    private const int Pot1Id = 1;   // Balkonski paradajz
+    private const int Pot2Id = 12;  // Paradajz zuti - natkrivena saksija
+    private const int Pot3Id = 15;  // Krovni paradajz
     private const int RandomSeed = 2026;
     private const decimal LowWaterThreshold = 15m;
     private const int ReservoirCapacityMl = 5000;
@@ -128,12 +130,20 @@ internal static class Program
         Console.WriteLine("[4/10] Provjeravam user_id=1...");
         await EnsureUserExistsAsync(connection);
 
-        Console.WriteLine("[5/10] Konfigurišem pot 1 i aktivnu biljku...");
-        var pot1 = await ConfigureExistingPot1Async(connection, tomato.Id);
-        Console.WriteLine("[6/10] Kreiram/ažuriram pot 2...");
-        var pot2 = await EnsurePotAsync(connection, "Natkriveni paradajz", "Balkon - natkriveni dio", false, 30, tomato.Id);
-        Console.WriteLine("[7/10] Kreiram/ažuriram pot 3...");
-        var pot3 = await EnsurePotAsync(connection, "Krovni paradajz", "Krovna terasa", true, 60, tomato.Id);
+        Console.WriteLine("[5/10] Konfigurišem pot 1 (Balkonski paradajz) i aktivnu biljku...");
+        var pot1 = await ConfigureExistingPotAsync(
+            connection, role: 1, potId: Pot1Id, location: "Balkon, jug",
+            rainExposed: true, intervalMinutes: 15, tomatoPlantTypeId: tomato.Id);
+
+        Console.WriteLine("[6/10] Konfigurišem pot 2 (Paradajz zuti - natkrivena saksija) i aktivnu biljku...");
+        var pot2 = await ConfigureExistingPotAsync(
+            connection, role: 2, potId: Pot2Id, location: "Balkon - natkriveni dio",
+            rainExposed: false, intervalMinutes: 30, tomatoPlantTypeId: tomato.Id);
+
+        Console.WriteLine("[7/10] Konfigurišem pot 3 (Krovni paradajz) i aktivnu biljku...");
+        var pot3 = await ConfigureExistingPotAsync(
+            connection, role: 3, potId: Pot3Id, location: "Krovna terasa",
+            rainExposed: true, intervalMinutes: 60, tomatoPlantTypeId: tomato.Id);
 
         var pots = new Dictionary<int, PotInfo>
         {
@@ -658,96 +668,64 @@ internal static class Program
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private static async Task<PotInfo> ConfigureExistingPot1Async(NpgsqlConnection connection, int tomatoPlantTypeId)
-    {
-        await using (var update = new NpgsqlCommand(
-            """
-            UPDATE plant_pot
-            SET name = 'Balkonski paradajz',
-                is_active = true,
-                is_rain_exposed = true,
-                sensor_reading_interval_minutes = 15
-            WHERE id = @id AND user_id = @userId;
-            """,
-            connection))
-        {
-            update.Parameters.AddWithValue("id", Pot1Id);
-            update.Parameters.AddWithValue("userId", UserId);
-            if (await update.ExecuteNonQueryAsync() == 0)
-                throw new InvalidOperationException("Nije pronađena plant_pot saksija id=1 za user_id=1.");
-        }
-
-        var name = await ScalarStringAsync(connection, "SELECT name FROM plant_pot WHERE id = @id;", ("id", Pot1Id))
-            ?? "Balkonski paradajz";
-
-        var plantId = await EnsureActivePlantAsync(connection, Pot1Id, tomatoPlantTypeId, "Balkonski paradajz");
-        return new PotInfo(1, Pot1Id, name, true, 15, plantId);
-    }
-
-    private static async Task<PotInfo> EnsurePotAsync(
+    private static async Task<PotInfo> ConfigureExistingPotAsync(
         NpgsqlConnection connection,
-        string name,
+        int role,
+        int potId,
         string location,
         bool rainExposed,
         int intervalMinutes,
         int tomatoPlantTypeId)
     {
-        int? id = null;
-
-        await using (var find = new NpgsqlCommand(
-            "SELECT id FROM plant_pot WHERE user_id = @userId AND name = @name ORDER BY id LIMIT 1;",
+        await using (var update = new NpgsqlCommand(
+            """
+            UPDATE plant_pot
+            SET location = @location,
+                is_active = true,
+                is_rain_exposed = @rainExposed,
+                sensor_reading_interval_minutes = @interval
+            WHERE id = @id AND user_id = @userId;
+            """,
             connection))
         {
-            find.Parameters.AddWithValue("userId", UserId);
-            find.Parameters.AddWithValue("name", name);
-            var value = await find.ExecuteScalarAsync();
-            if (value is not null && value is not DBNull) id = Convert.ToInt32(value, CultureInfo.InvariantCulture);
-        }
-
-        if (!id.HasValue)
-        {
-            await using var insert = new NpgsqlCommand(
-                """
-                INSERT INTO plant_pot
-                    (user_id, name, location, mac_address, firmware_version, is_active,
-                     created_at, is_rain_exposed, sensor_reading_interval_minutes)
-                VALUES
-                    (@userId, @name, @location, NULL, NULL, true,
-                     TIMESTAMP '2026-06-10 12:00:00', @rainExposed, @interval)
-                RETURNING id;
-                """,
-                connection);
-
-            insert.Parameters.AddWithValue("userId", UserId);
-            insert.Parameters.AddWithValue("name", name);
-            insert.Parameters.AddWithValue("location", location);
-            insert.Parameters.AddWithValue("rainExposed", rainExposed);
-            insert.Parameters.AddWithValue("interval", intervalMinutes);
-            id = Convert.ToInt32(await insert.ExecuteScalarAsync() ?? throw new InvalidOperationException("Nije moguće kreirati saksiju."), CultureInfo.InvariantCulture);
-        }
-        else
-        {
-            await using var update = new NpgsqlCommand(
-                """
-                UPDATE plant_pot
-                SET location = @location,
-                    is_active = true,
-                    is_rain_exposed = @rainExposed,
-                    sensor_reading_interval_minutes = @interval
-                WHERE id = @id;
-                """,
-                connection);
-
             update.Parameters.AddWithValue("location", location);
             update.Parameters.AddWithValue("rainExposed", rainExposed);
             update.Parameters.AddWithValue("interval", intervalMinutes);
-            update.Parameters.AddWithValue("id", id.Value);
-            await update.ExecuteNonQueryAsync();
+            update.Parameters.AddWithValue("id", potId);
+            update.Parameters.AddWithValue("userId", UserId);
+
+            if (await update.ExecuteNonQueryAsync() == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Nije pronađena plant_pot saksija id={potId} za user_id={UserId}.");
+            }
         }
 
-        var plantId = await EnsureActivePlantAsync(connection, id.Value, tomatoPlantTypeId, name);
-        var role = name.StartsWith("Natkriveni", StringComparison.OrdinalIgnoreCase) ? 2 : 3;
-        return new PotInfo(role, id.Value, name, rainExposed, intervalMinutes, plantId);
+        var name = await ScalarStringAsync(
+            connection,
+            "SELECT name FROM plant_pot WHERE id = @id AND user_id = @userId;",
+            ("id", potId),
+            ("userId", UserId));
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidOperationException(
+                $"Saksija id={potId} nema validan naziv ili ne pripada user_id={UserId}.");
+        }
+
+        var plantId = await EnsureActivePlantAsync(
+            connection,
+            potId,
+            tomatoPlantTypeId,
+            name);
+
+        return new PotInfo(
+            role,
+            potId,
+            name,
+            rainExposed,
+            intervalMinutes,
+            plantId);
     }
 
     private static async Task<int> EnsureActivePlantAsync(NpgsqlConnection connection, int potId, int plantTypeId, string nickname)
@@ -924,20 +902,9 @@ internal static class Program
     {
         await EnsureUserExistsAsync(connection);
 
-        var potIds = new List<int> { Pot1Id };
-        await using (var find = new NpgsqlCommand(
-            """
-            SELECT id
-            FROM plant_pot
-            WHERE user_id = @userId
-              AND name IN ('Natkriveni paradajz', 'Krovni paradajz');
-            """,
-            connection))
-        {
-            find.Parameters.AddWithValue("userId", UserId);
-            await using var reader = await find.ExecuteReaderAsync();
-            while (await reader.ReadAsync()) potIds.Add(reader.GetInt32(0));
-        }
+        // Evaluacija koristi tri postojeće saksije iz baze.
+        // ID-jevi su fiksirani kako reseed ne bi zavisio od njihovih naziva.
+        var potIds = new List<int> { Pot1Id, Pot2Id, Pot3Id };
 
         var plantIds = new List<int>();
         await using (var findPlants = new NpgsqlCommand(

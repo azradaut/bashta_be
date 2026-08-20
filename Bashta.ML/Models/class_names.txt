@@ -1,10 +1,324 @@
-Tomato_Bacterial_spot
-Tomato_Early_blight
-Tomato_Late_blight
-Tomato_Leaf_Mold
-Tomato_Septoria_leaf_spot
-Tomato_Spider_mites_Two_spotted_spider_mite
-Tomato__Target_Spot
-Tomato__Tomato_YellowLeaf__Curl_Virus
-Tomato__Tomato_mosaic_virus
-Tomato_healthy
+Pregledala sam cijelu trenutnu radnu verziju od **86 stranica**, uključujući tekst, sve tabele i slike, njihove međusobne veze te posebno odnos između Poglavlja 3 i 4. Ovo je već ozbiljna osnova master rada, ali pri visokom akademskom standardu još postoji nekoliko **stvarnih sadržajnih i arhitektonskih nedosljednosti koje treba riješiti prije nego nastavimo gomilati nove priloge**. 
+
+## Stroga ocjena trenutnog stanja
+
+| Element                                 |       Ocjena | Procjena                                                                               |
+| --------------------------------------- | -----------: | -------------------------------------------------------------------------------------- |
+| Predmet, ciljevi i istraživačka pitanja |   **8,4/10** | Dobro fokusirano na arhitekturu, ali održivost treba preciznije operacionalizovati     |
+| Metodološki okvir                       |   **7,6/10** | Dobar razvojno-evaluacijski koncept, ali DSR i metod pretrage traže doradu             |
+| Pregled literature                      |   **8,9/10** | Kritičan, sistematizovan i mnogo bolji nego ranije                                     |
+| Kritička sinteza i istraživački prostor |   **9,2/10** | Jedan od najjačih dijelova rada                                                        |
+| Zahtjevi i arhitektura – Poglavlje 3    |   **8,7/10** | Vrlo dobra struktura, nekoliko važnih modelskih nedosljednosti                         |
+| Implementacija – Poglavlje 4            |   **7,9/10** | Dobra transparentnost, ali još ima redundancije i nekoliko činjeničnih problema        |
+| Sljedivost dizajn → implementacija      |   **8,5/10** | Dobro postavljena i može postati izrazito jaka nakon Poglavlja 5                       |
+| Tabele i vizuelna argumentacija         |   **8,4/10** | Većina ima svrhu; nekoliko još ponavlja tekst                                          |
+| Akademska odmjerenost tvrdnji           |   **9,3/10** | Odlično ograničavaš tvrdnje o održivosti, senzorima i ML-u                             |
+| Interna konzistentnost                  |   **7,5/10** | Trenutno najveća slabost                                                               |
+| **Kvalitet završenog sadržaja 1–4**     |   **8,4/10** | Vrlo dobra radna verzija                                                               |
+| **Spremnost za konačnu predaju danas**  | **oko 6/10** | Zbog nedovršenih 5–7, sažetka, fizičke integracije i finalne metodološke konsolidacije |
+
+Uz korekcije ispod i kvalitetno Poglavlje 5, ovaj rad realno može doći na **9+ nivo**. Ne treba mu još mnogo teorije; treba mu preciznost, konzistentnost i dokaz implementacije.
+
+---
+
+# 1. Greške i nedostaci koje bih sada obavezno ispravila
+
+| Prioritet | Mjesto                  | Problem                                                                                                                                                | Šta uraditi                                                                                                                                                                            |
+| --------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🔴        | Poglavlje 2             | **Nedostaje 2.1.** Poglavlje odmah počinje s 2.2.                                                                                                      | Dodati **2.1. Metod pretrage i odabira literature**.                                                                                                                                   |
+| 🔴        | Struktura Worda         | 2.2, 2.3 i 2.4 su trenutno stilom `Heading 1`, dok su 2.5 i 2.6 `Heading 2`.                                                                           | Sve 2.x staviti na isti Heading 2 nivo. Zato je i sadržaj trenutno pogrešan.                                                                                                           |
+| 🔴        | 2.1 / 1.5.2             | Pretraga navodi samo `smart urban agriculture`, `IoT architecture in agriculture`, `IoT in agriculture`, iako je veliki dio rada o zalijevanju i ML-u. | Dodati klastere `smart irrigation`, `soil moisture`, `plant disease detection`, `deep learning`, `PlantVillage`, `mobile applications in agriculture`.                                 |
+| 🔴        | 1.5.2                   | Period je 2019–2026, a stvarni korpus [1]–[21] je 2020–2025.                                                                                           | Staviti **2020–2026**; preciznije odgovara kriteriju posljednjih 7 godina.                                                                                                             |
+| 🔴        | 1.5                     | DSR je naveden bez metodološkog izvora i istovremeno kažeš da ga ne formalizuješ.                                                                      | Ili ga formalno citirati i mapirati faze rada na DSR, ili jednostavnije izbaciti oznaku DSR i zadržati **razvojno-evaluacijski pristup**. Ja bih birala drugo.                         |
+| 🔴        | Tema rada               | Nije dovoljno operacionalizovano šta znači **„poboljšanje održivosti“** kada ne mjeriš stvarnu uštedu vode ili LCA.                                    | Eksplicitno definirati da se održivost razmatra kroz **tehničke mehanizme podrške racionalnijem korištenju resursa**, a ne kao empirijski dokazano poboljšanje okolišnih učinaka.      |
+| 🔴        | Poglavlje 2             | Nedostaje eksplicitni **EU strateški kontekst**, iako je dio zahtjeva teme.                                                                            | Dodati kratak dio o relevantnim EU strategijama; službeni dokumenti ne ulaze u matricu peer-reviewed radova.                                                                           |
+| 🔴        | Poglavlje 2 / diskusija | Sarajevo je gotovo nevidljivo osim u OpenWeatherMap konfiguraciji.                                                                                     | Dodati jedan kratak lokalni kontekst, bez pravljenja Sarajeva „naučnom novošću“.                                                                                                       |
+| 🔴        | 3.1 / 3.2 / Slike 11–12 | **Granica sistema je nekonzistentna.** Na kontekstnom dijagramu IoT uređaj je unutar sistema, a na use-case dijagramu je vanjski akter.                | Najčišće: Sliku 12 nazvati **„Dijagram slučajeva korištenja aplikacijskog dijela sistema“** i objasniti da su IoT uređaj i vremenski servis vanjski akteri prema aplikacijskom dijelu. |
+| 🔴        | Tabela 28 / Slika 14    | Još nisu potpuno usklađene.                                                                                                                            | Ispraviti veze Backend API-ja, servisa zalijevanja i ML servisa; detalji ispod.                                                                                                        |
+| 🔴        | Slika 15                | Kardinalnost `Disease–DiseaseDetection` je još uvijek obrnuta.                                                                                         | Mora biti **Disease 1 — N DiseaseDetection**.                                                                                                                                          |
+| 🔴        | TimescaleDB             | 1.5.4 kaže da se TimescaleDB koristi, a 4.1 i 4.3 tvrde da nije uveden.                                                                                | Utvrditi jednu činjenicu i svuda je koristiti.                                                                                                                                         |
+| 🔴        | TimescaleDB             | Raniji export baze koji si pokazala imao je `_timescaledb_internal._hyper...chunk` objekte.                                                            | Prije finalne tvrdnje provjeriti `timescaledb_information.hypertables`. Ovo je trenutno činjenični rizik.                                                                              |
+| 🔴        | Slika 18                | Naziva se **ER dijagram implementirane baze**, ali nazivi kolona nisu potpuno identični stvarnom fizičkom modelu (`USER_ID` umjesto `id`, itd.).       | Ako predstavlja implementaciju, koristiti **stvarna imena tabela, PK/FK i kolona**.                                                                                                    |
+| 🔴        | 4.7 ML                  | Opis treninga nije dovoljno reproducibilan.                                                                                                            | Dodati arhitekturu modela, podjelu train/validation/test, osnovne parametre treninga i tačnu predobradu.                                                                               |
+| 🟠        | PlantVillage            | Koristiš dataset, ali nema direktnog izvora/provenijencije skupa.                                                                                      | U praktičnom dijelu navesti izvor skupa i verziju/porijeklo podataka.                                                                                                                  |
+| 🟠        | 4.6 / Tabela 37         | Intervali „do 5“ i „od 5 do 15“ se preklapaju.                                                                                                         | `do 5`, `>5 do 15`, `>15`.                                                                                                                                                             |
+| 🟠        | 4.6                     | BR-06 govori o minimalnom razmaku, BR-07 o dnevnim ograničenjima, ali Tabela 37 ne prikazuje sve konkretne implementirane vrijednosti.                 | Dodati stvarni minimalni interval i eventualni dnevni maksimum ako postoje u kodu.                                                                                                     |
+| 🟠        | 4.9                     | Tabela 38 ima pogrešan naslov — ponavlja naslov Tabele 37.                                                                                             | Promijeniti u **„Status realizacije ključnih integracijskih tokova prototipa“**.                                                                                                       |
+| 🟠        | 4.9                     | „Automatska procjena... implementirana na aplikacijskom nivou“ nije precizno.                                                                          | **„Implementirana u backend poslovnoj logici, bez fizičkog izvršenja na uređaju.“**                                                                                                    |
+| 🟠        | 4.9                     | „Senzorski i upravljački tokovi završavaju se na aplikacijskom nivou“ tehnički je netačno.                                                             | Zamjena je data niže.                                                                                                                                                                  |
+| 🟠        | 4.4                     | Tekst kaže **„Slika 18 prikazuje odabrane ekrane“**, ali to je sada Slika 19.                                                                          | Promijeniti na **Slika 19**.                                                                                                                                                           |
+| 🟠        | Slika 16                | Naziv je preširok.                                                                                                                                     | **„Sekvencijski dijagram automatske procjene i zalijevanja.“**                                                                                                                         |
+| 🟠        | Slike 17–19             | Nedostaje „Izvor: autorova izrada“.                                                                                                                    | Dodati dosljedno.                                                                                                                                                                      |
+| 🟠        | 1.5.2 / 4.8             | U metodama obećavaš mjerenje **nivoa vode**, a 4.8 planirani uređaj ga ne uključuje. Istovremeno nedostaje vlažnost zraka u tom popisu.                | Ako nema senzora nivoa vode: izbaciti „nivo vode“ i navesti **vlažnost tla, temperaturu i vlažnost zraka, osvjetljenje**.                                                              |
+
+---
+
+# 2. Tabela 28 mora pratiti finalnu komponentnu arhitekturu
+
+Slika 14 je sada bolja od teksta Tabele 28. Tabelu bih uskladila ovako.
+
+Za **Backend API**, „Glavne veze“:
+
+> **Mobilna aplikacija, IoT uređaj i servisi poslovne logike**
+
+umjesto:
+
+> Poslovni servisi, repozitoriji i vanjske integracije.
+
+Za **Servis zalijevanja**:
+
+> **Servisi poslovne logike, senzorski i historijski podaci te vremenski kontekst**
+
+bez direktnog IoT uređaja.
+
+Za **ML servis**:
+
+> **Servisi poslovne logike i klasifikacioni model**
+
+bez direktne baze podataka.
+
+Tada Slika 14 i Tabela 28 pričaju **istu arhitektonsku priču**.
+
+---
+
+# 3. Poglavlje 3 je sada skoro završeno
+
+Nakon tih korekcija, Poglavlje 3 je po meni na nivou **9/10**.
+
+Posebno su jaki:
+
+**3.3–3.5** — zahtjevi su logično razdvojeni na FR/NFR/DR/BR.
+
+**3.8** — sljedivost zahtjeva je odlična odluka i kasnije može postati centralni dokaz evaluacije.
+
+**3.9** — arhitektonski pokretači daju razlog zašto arhitektura izgleda kako izgleda.
+
+**3.15** — odluke i kompromisi su akademski mnogo kvalitetniji od pukog nabrajanja tehnologija.
+
+**3.16** — dobro si ograničila tvrdnju: kvalitativna procjena proširivosti, a ne lažna „dokazana skalabilnost“.
+
+Jedino pravo preostalo **vizuelno ponavljanje** je Tabela 27 + Slika 13. Ne bih ništa brisala sada, ali bih na kraju pojednostavila Sliku 13 tako da sadrži samo nazive pet slojeva i smjerove tokova, jer detaljne odgovornosti već postoje u tabeli.
+
+---
+
+# 4. Poglavlje 4 je mjesto gdje sada možemo najviše skratiti rad
+
+Tu bih bila prilično agresivna. Cilj Poglavlja 4 nije ponovo opisivati projektovanu arhitekturu, nego pokazati **šta je stvarno implementirano**.
+
+| Element                                                 | Konačna odluka                                              |
+| ------------------------------------------------------- | ----------------------------------------------------------- |
+| **Tabela 33 – tehnologije**                             | **OSTAJE**                                                  |
+| **Tabela 34 – funkcionalna područja backenda**          | **IZBACITI**                                                |
+| **Tabela 35 – grupe podataka**                          | **IZBACITI**                                                |
+| **Slika 18 – implementirani ERD**                       | **OBAVEZNO OSTAJE**, nakon korekcije                        |
+| **Tabela 36 – funkcionalne cjeline mobilne aplikacije** | **IZBACITI**                                                |
+| **Slika 19 – četiri ekrana aplikacije**                 | **OBAVEZNO OSTAJE**                                         |
+| **4.5 vremenski servis**                                | Tekst je dovoljan                                           |
+| **Tabela 37 – implementirana pravila**                  | **OBAVEZNO OSTAJE**                                         |
+| Dodatni flowchart zalijevanja                           | **NE TREBA**                                                |
+| Confusion matrix                                        | **Poglavlje 5, ne 4.7**                                     |
+| Slika planiranog IoT sklopa                             | Zamijeniti **fotografijom stvarnog sklopa** kada bude gotov |
+| **Tabela 38 – status integracije**                      | **OBAVEZNO OSTAJE**, nakon korekcije                        |
+
+Time Poglavlje 4 postaje mnogo zrelije.
+
+### Zašto bih izbacila Tabelu 34?
+
+Jer ponovno nabraja:
+
+> saksije, senzore, zalijevanje, vremenske podatke, preporuke, ML...
+
+što smo već objasnili kroz zahtjeve i komponentnu arhitekturu.
+
+### Zašto Tabela 35 ide van?
+
+Tabela 29 već opisuje konceptualne entitete, a Slika 18 pokazuje **stvarnu implementaciju**. Tabela 35 između njih ne dodaje dovoljno novu informaciju.
+
+### Zašto Tabela 36 ide van?
+
+Slika 19 mnogo kvalitetnije dokazuje da mobilna aplikacija postoji i šta omogućava.
+
+Ovim možemo skratiti Poglavlje 4 za otprilike **1,5–2 stranice bez gubitka sadržaja**.
+
+---
+
+# 5. Slika 18 – ERD je sada vizuelno dobar, ali mora biti fizički tačan
+
+Ovo je važna razlika:
+
+**Slika 15** = konceptualni model
+**Slika 18** = implementirani model.
+
+Zbog toga na Slici 18 ne bih „uljepšavala“ nazive.
+
+Ako stvarna baza ima:
+
+> `users.id`
+> `plant_pot.id`
+> `plant_pot.user_id`
+> `plant.pot_id`
+> `watering_event.pot_id`
+
+onda upravo tako treba stajati.
+
+Posebno je dobro što `sensor_readings` sada nema izmišljeni `sensor_readings_id`.
+
+Vizuelno bih jedino pokušala Sliku 18 postaviti na **jednu A4 landscape stranicu**, jer je trenutno na portretnoj A4 stranici dovoljno jasna na ekranu, ali je tekst vrlo sitan za štampanu verziju.
+
+---
+
+# 6. Screenshotovi aplikacije – izbor je dobar
+
+Četiri ekrana na Slici 19 su potpuno dovoljna:
+
+> A) pregled saksija
+> B) detalji biljke/stanje
+> C) zalijevanje i preporuke
+> D) ML analiza biljke
+
+Ne dodavati više screenshotova u glavni tekst.
+
+Ali prije finalnog snimanja aplikacije ukloni testne podatke poput:
+
+> `watering test 19072026`
+
+i koristi čiste demonstracijske zapise. Takva sitnica pravi veliku razliku u profesionalnom utisku slike.
+
+---
+
+# 7. 4.7 ML komponenta treba malu, ali važnu dopunu
+
+Trenutni opis dobro objašnjava **integraciju**, ali ne omogućava čitaocu da razumije kako je model stvarno dobijen.
+
+Ne treba deset stranica ML metodologije. Dovoljno je dodati jedan kratak odlomak ili malu tabelu sa:
+
+> korištenom CNN arhitekturom;
+> brojem klasa;
+> brojem fotografija / podjelom train-validation-test;
+> veličinom ulaza 224×224;
+> glavnim transformacijama/augmentacijom;
+> optimizerom i loss funkcijom;
+> brojem epoha;
+> načinom izvoza u ONNX.
+
+Samo **stvarne vrijednosti iz training skripte**.
+
+Metrike, 98,59%, precision/recall/F1 i confusion matrix ostaju za Poglavlje 5.
+
+To je vrlo dobra podjela:
+
+> **4.7 = kako je komponenta napravljena**
+> **5.x = koliko dobro radi**
+
+---
+
+# 8. Održivost je trenutno najveće konceptualno pitanje rada
+
+Ovo bih posebno ozbiljno shvatila zbog samog naslova rada.
+
+Rad sada vrlo dobro kaže:
+
+> ne dokazujemo uštedu vode;
+> ne dokazujemo agronomsku optimalnost;
+> ne dokazujemo ukupnu okolišnu održivost.
+
+To je odlična akademska disciplina.
+
+Ali moraš onda eksplicitno reći **šta u radu znači „poboljšanje održivosti“**.
+
+Predlažem da u uvodu kasnije ubacimo jednu formulaciju približno ovog tipa:
+
+> U okviru ovog istraživanja poboljšanje održivosti ne posmatra se kao empirijski potvrđeno smanjenje ukupnog okolišnog opterećenja, nego kao projektovanje tehničkih mehanizama koji mogu podržati racionalnije korištenje vode, pravovremeno reagovanje na promjene uslova uzgoja i dugoročnu proširivost sistema. Stvarni okolišni učinci zahtijevali bi dugoročnije kontrolisano poređenje koje nije obuhvaćeno ovim istraživanjem.
+
+Time unaprijed odgovaraš na potencijalno najteže pitanje komisije:
+
+> **„Naslov kaže sustainability enhancement — gdje ste dokazali enhancement?“**
+
+Odgovor će biti precizno definisan i metodološki odbranjiv.
+
+---
+
+# 9. EU i Sarajevo još nedostaju
+
+Ovo ne treba proširivati na 5 stranica.
+
+Dovoljno je oko **pola do jedne stranice ukupno**:
+
+EU strateški okvir → zašto urbana proizvodnja hrane, resursna efikasnost, digitalizacija i otpornost imaju širi kontekst.
+
+Sarajevo → zašto balkon/terasa/krov predstavljaju smislen mikro-urbani kontekst za prototip.
+
+To bih smjestila u **2.2**, a ne pravila zasebna velika teorijska poglavlja.
+
+---
+
+# 10. Konkretne male greške koje već sada treba označiti
+
+U dokumentu su još ostali:
+
+> `Predmet istraživanjaaa` u sadržaju
+> `(vise placeholder)` u 1.6
+> pet pojavljivanja `Tabela 2.X`
+> `Tabela 1 prikazuje...` u 2.4, iako je riječ o Tabeli 11
+> `Reprezentativni scenariji prikazani su u Tabeli 3.7.` — treba Tabela 23
+> `odabranoj literature` → `odabranoj literaturi`
+> `Tabela 17: . Akteri...` → ukloniti dodatnu tačku
+> `Slika 5:Raspodjela` → dodati razmak
+> više `osnovu[7]` → `osnovu [7]`
+> `Slika 18 prikazuje odabrane ekrane...` → **Slika 19**
+> Slika 17, 18 i 19 nemaju dosljedno naveden izvor
+> Tabela 38 ima naslov Tabele 37.
+
+Naslov na stranici s podacima o radu također ima:
+
+> `Urban AgroEcosystemsfor`
+
+bez razmaka, a engleski naslov treba potpuno ujednačiti sa odobrenim naslovom na naslovnoj stranici.
+
+---
+
+# 11. Jedna korekcija teksta 4.9 koju bih napravila odmah
+
+Umjesto:
+
+> Senzorski i upravljački tokovi trenutno se završavaju na aplikacijskom nivou.
+
+stavi:
+
+> **Senzorski tok trenutno obuhvata prijem, obradu, pohranu i prikaz simuliranih očitanja, dok se upravljački tok završava evidentiranjem odluke bez fizičke potvrde izvršenja.**
+
+Mnogo je preciznije.
+
+A u Tabeli 38:
+
+> Automatska procjena potrebe za zalijevanjem — **Implementirana u backend poslovnoj logici, bez fizičkog izvršenja na uređaju.**
+
+---
+
+# 12. Šta trenutno ne bih dirala
+
+Ne bih širila:
+
+**2.3–2.6** dodatnom teorijom osim EU/Sarajevo i 2.1.
+
+Ne bih dodavala više arhitektonskih dijagrama.
+
+Ne bih dodavala screenshot Visual Studija, Swaggera, JSON odgovora ili source codea u Poglavlje 4.
+
+Ne bih stavljala confusion matrix u Poglavlje 4.
+
+Ne bih dodavala još screenshotova aplikacije.
+
+Ne bih proširivala diskusiju o sigurnosti, skalabilnosti ili UX-u jer ih ne evaluiraš formalno.
+
+---
+
+## Gdje smo stvarno sada
+
+Najbolji dio rada je trenutno **kritička veza literatura → zahtjevi → arhitektonske odluke**. To već djeluje kao master rad, a ne kao obična projektna dokumentacija.
+
+Najveći problem više nije nedostatak sadržaja. Problem je **unutrašnja konzistentnost**: kada kažemo da je nešto dio sistema, šta je projektovano, šta je implementirano, šta je samo planirano i šta je stvarno evaluirano.
+
+Zato bih sada napravila ovaj redoslijed: **prvo ispraviti navedene greške u 2–4 i izbaciti redundantne Tabele 34–36; zatim finalizovati 4.7 i 4.8 prema stvarnom kodu/hardveru; tek onda krenuti na Poglavlje 5.** Nakon Poglavlja 5 vraćamo se na Poglavlje 1 i usklađujemo svaku rečenicu sa onim što je zaista realizovano.
+
+Tada će arhitektura, implementacija i evaluacija činiti jednu zatvorenu argumentacijsku cjelinu, što je upravo ono što ovom radu može dati **9+ akademski nivo**.
